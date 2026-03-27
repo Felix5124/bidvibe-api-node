@@ -8,6 +8,7 @@ const { errorHandler } = require('./middlewares/errorHandler.middleware');
 const { apiLimiter } = require('./middlewares/rateLimiter.middleware');
 const userRoutes = require('./modules/user/user.routes');
 const walletRoutes = require('./modules/wallet/wallet.routes');
+const itemRoutes = require('./modules/item/item.routes');
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use(express.json());
 app.use('/api', apiLimiter);
 app.use('/api/users', userRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/items', itemRoutes);
 
 
 // Health check

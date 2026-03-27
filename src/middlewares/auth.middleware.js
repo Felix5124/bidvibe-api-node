@@ -1,8 +1,13 @@
 require('dotenv').config();
-const { verifyToken } = require('../config/jwt.config');
+const { createClient } = require('@supabase/supabase-js');
 const { query } = require('../config/database.config');
 const { error } = require('../utils/apiResponse');
 const { ErrorCode } = require('../constants/errorCodes');
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 const authenticate = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -12,7 +17,16 @@ const authenticate = async (req, res, next) => {
 
   const token = authHeader.slice(7);
   try {
-    const decoded = await verifyToken(token);
+    const { data, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !data?.user) {
+      return error(res, 'Token không hợp lệ hoặc đã hết hạn.', ErrorCode.UNAUTHORIZED, 401);
+    }
+
+    const decoded = {
+      sub: data.user.id,
+      email: data.user.email,
+    };
 
     // Auto create user + wallet nếu lần đầu login
     const { rows } = await query(

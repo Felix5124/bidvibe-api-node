@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const { pool } = require('./config/database.config');
 const { errorHandler } = require('./middlewares/errorHandler.middleware');
 const { apiLimiter } = require('./middlewares/rateLimiter.middleware');
+const userRoutes = require('./modules/user/user.routes');
 
 const app = express();
 
@@ -14,6 +15,8 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', crede
 app.use(morgan('dev'));
 app.use(express.json());
 app.use('/api', apiLimiter);
+app.use('/api/users', userRoutes);
+
 
 // Health check
 app.get('/health', async (req, res) => {

@@ -1,0 +1,37 @@
+{
+  "name": "bidvibe-api-node",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Felix5124/bidvibe-api-node.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Felix5124/bidvibe-api-node/issues"
+  },
+  "homepage": "https://github.com/Felix5124/bidvibe-api-node#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.100.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
+    "express-validator": "^7.3.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "jwks-rsa": "^4.0.1",
+    "morgan": "^1.10.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.4",
+    "pg": "^8.20.0",
+    "socket.io": "^4.8.3",
+    "uuid": "^13.0.0"
+  }
+}

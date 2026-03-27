@@ -7,6 +7,7 @@ const { pool } = require('./config/database.config');
 const { errorHandler } = require('./middlewares/errorHandler.middleware');
 const { apiLimiter } = require('./middlewares/rateLimiter.middleware');
 const userRoutes = require('./modules/user/user.routes');
+const walletRoutes = require('./modules/wallet/wallet.routes');
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use('/api', apiLimiter);
 app.use('/api/users', userRoutes);
+app.use('/api/wallet', walletRoutes);
 
 
 // Health check

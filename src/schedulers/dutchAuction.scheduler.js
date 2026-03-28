@@ -71,7 +71,7 @@ const startDutchScheduler = () => {
     }
   });
 
-  console.log('[DutchScheduler] Started ✓');
+  console.log('[DutchScheduler] Started ');
 };
 
 module.exports = { startDutchScheduler };

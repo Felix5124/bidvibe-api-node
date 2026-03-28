@@ -181,7 +181,7 @@ const startEnglishScheduler = () => {
     }
   });
 
-  console.log('[EnglishScheduler] Started ✓');
+  console.log('[EnglishScheduler] Started ');
 };
 
 module.exports = { startEnglishScheduler, activateNextAuction };

@@ -18,9 +18,29 @@ const stopSession    = async (req, res, next) => { try { ok(res, await service.s
 const resetTimer     = async (req, res, next) => { try { ok(res, await service.resetTimer(req.params.auctionId)); } catch (e) { next(e); } };
 const deleteBid      = async (req, res, next) => { try { ok(res, await service.deleteBid(req.params.bidId)); } catch (e) { next(e); } };
 
+// ── USERS ──────────────────────────────────────────────────
+const getUsers   = async (req, res, next) => { try { ok(res, await service.getUsers(req.query)); } catch (e) { next(e); } };
+const getUser    = async (req, res, next) => { try { ok(res, await service.getUser(req.params.id)); } catch (e) { next(e); } };
+const updateRole = async (req, res, next) => { try { ok(res, await service.updateRole(req.params.id, req.body.role)); } catch (e) { next(e); } };
+const muteUser   = async (req, res, next) => { try { ok(res, await service.muteUser(req.params.id)); } catch (e) { next(e); } };
+const unmuteUser = async (req, res, next) => { try { ok(res, await service.unmuteUser(req.params.id)); } catch (e) { next(e); } };
+const banUser    = async (req, res, next) => { try { ok(res, await service.banUser(req.params.id, req.body.reason)); } catch (e) { next(e); } };
+const unbanUser  = async (req, res, next) => { try { ok(res, await service.unbanUser(req.params.id)); } catch (e) { next(e); } };
+const kickUser   = async (req, res, next) => { try { ok(res, await service.kickUser(req.params.id, req.body.auctionId)); } catch (e) { next(e); } };
+
+// ── FINANCE ────────────────────────────────────────────────
+const getAdminTransactions  = async (req, res, next) => { try { ok(res, await service.getAdminTransactions(req.query)); } catch (e) { next(e); } };
+const approveTransaction    = async (req, res, next) => { try { ok(res, await service.approveTransaction(req.params.id)); } catch (e) { next(e); } };
+const rejectTransaction     = async (req, res, next) => { try { ok(res, await service.rejectTransaction(req.params.id)); } catch (e) { next(e); } };
+const getP2pMessages        = async (req, res, next) => { try { ok(res, await service.getP2pMessages(req.params.id)); } catch (e) { next(e); } };
+
 module.exports = {
   getItems, getItem, approveItem, rejectItem,
   createSession, addAuction, removeAuction,
   startSession, pauseSession, resumeSession, stopSession,
   resetTimer, deleteBid,
+  getUsers, getUser, updateRole,
+  muteUser, unmuteUser, banUser, unbanUser, kickUser,
+  getAdminTransactions, approveTransaction, rejectTransaction,
+  getP2pMessages,
 };

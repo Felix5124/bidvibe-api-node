@@ -23,4 +23,20 @@ router.post('/sessions/:id/stop',                 ctrl.stopSession);
 router.post('/sessions/:id/auctions/:auctionId/reset-timer', ctrl.resetTimer);
 router.delete('/auctions/:auctionId/bids/:bidId', ctrl.deleteBid);
 
+// Users
+router.get('/users',                    ctrl.getUsers);
+router.get('/users/:id',                ctrl.getUser);
+router.patch('/users/:id/role',         ctrl.updateRole);
+router.post('/users/:id/mute',          ctrl.muteUser);
+router.post('/users/:id/unmute',        ctrl.unmuteUser);
+router.post('/users/:id/ban',           ctrl.banUser);
+router.post('/users/:id/unban',         ctrl.unbanUser);
+router.post('/users/:id/kick',          ctrl.kickUser);
+
+// Finance
+router.get('/transactions',                    ctrl.getAdminTransactions);
+router.post('/transactions/:id/approve',       ctrl.approveTransaction);
+router.post('/transactions/:id/reject',        ctrl.rejectTransaction);
+router.get('/market/listings/:id/messages',    ctrl.getP2pMessages);
+
 module.exports = router;

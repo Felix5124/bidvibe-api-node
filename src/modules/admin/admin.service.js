@@ -68,10 +68,101 @@ const deleteBid = async (bidId) => {
   });
   return result;
 };
+// ── USERS ──────────────────────────────────────────────────
+
+const getUsers     = (q) => repo.getUsers(q);
+const getUser      = (id) => repo.getUserDetail(id);
+const updateRole   = (id, role) => repo.updateUserField(id, { role });
+const muteUser     = (id) => repo.updateUserField(id, { is_muted: true });
+const unmuteUser   = (id) => repo.updateUserField(id, { is_muted: false });
+
+const banUser = async (id, reason) => {
+  const updated = await repo.updateUserField(id, {
+    is_banned: true,
+    banned_at: new Date().toISOString(),
+  });
+  await notifService.send(
+    id,
+    NotificationType.MODERATION,
+    'Tài khoản bị khóa',
+    `Tài khoản của bạn đã bị khóa. Lý do: ${reason || 'Vi phạm điều khoản.'}`
+  );
+  return updated;
+};
+
+const unbanUser = (id) =>
+  repo.updateUserField(id, { is_banned: false, banned_at: null });
+
+const kickUser = async (userId, auctionId) => {
+  try {
+    const { getIo } = require('../../websocket/wsServer');
+    const sockets = await getIo().fetchSockets();
+    for (const socket of sockets) {
+      if (socket.data.userId === userId) {
+        socket.leave(`auction:${auctionId}`);
+        socket.emit('kicked', { auctionId, message: 'Bạn bị đuổi khỏi phòng đấu giá.' });
+      }
+    }
+  } catch {
+    // WS không sẵn sàng
+  }
+  await notifService.send(
+    userId,
+    NotificationType.MODERATION,
+    'Bị đuổi khỏi phòng',
+    'Quản trị viên đã ngắt kết nối của bạn.'
+  );
+  return { message: 'Đã kick user.' };
+};
+
+// ── FINANCE ────────────────────────────────────────────────
+
+const getAdminTransactions = (q) => repo.getTransactions(q);
+
+const approveTransaction = async (txId) => {
+  const tx = await repo.approveTransaction(txId);
+  // Lấy userId để notify
+  const { rows: u } = await query(
+    'SELECT user_id FROM wallets WHERE id = $1', [tx.wallet_id]
+  );
+  if (u.length) {
+    const label = tx.type === 'DEPOSIT' ? 'nạp' : 'rút';
+    await notifService.send(
+      u[0].user_id,
+      NotificationType.FINANCE,
+      `Yêu cầu ${label} tiền được duyệt`,
+      `Yêu cầu ${label} ${parseFloat(tx.amount).toLocaleString('vi-VN')}đ đã được xử lý thành công.`
+    );
+  }
+  return tx;
+};
+
+const rejectTransaction = async (txId) => {
+  const tx = await repo.rejectTransaction(txId);
+  const { rows: u } = await query(
+    'SELECT user_id FROM wallets WHERE id = $1', [tx.wallet_id]
+  );
+  if (u.length) {
+    const label = tx.type === 'DEPOSIT' ? 'nạp' : 'rút';
+    await notifService.send(
+      u[0].user_id,
+      NotificationType.FINANCE,
+      `Yêu cầu ${label} tiền bị từ chối`,
+      `Yêu cầu ${label} ${parseFloat(tx.amount).toLocaleString('vi-VN')}đ đã bị từ chối.`
+    );
+  }
+  return tx;
+};
+
+const getP2pMessages = (listingId) => repo.getP2pMessages(listingId);
 
 module.exports = {
   getItems, getItem, approveItem, rejectItem,
   createSession, addAuction, removeAuction,
   startSession, pauseSession, resumeSession, stopSession,
   resetTimer, deleteBid,
+  getUsers, getUser, updateRole,
+  muteUser, unmuteUser, banUser, unbanUser, kickUser,
+  getAdminTransactions, approveTransaction, rejectTransaction,
+  getP2pMessages,
 };

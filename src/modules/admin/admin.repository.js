@@ -308,10 +308,223 @@ const deleteBid = async (bidId) => {
     client.release();
   }
 };
+// ── USERS ──────────────────────────────────────────────────
+
+const getUsers = async (q) => {
+  const { page, size } = parsePagination(q);
+  const conditions = [];
+  const params = [];
+
+  if (q.role) {
+    params.push(q.role);
+    conditions.push(`role = $${params.length}`);
+  }
+  if (q.isBanned !== undefined) {
+    params.push(q.isBanned === 'true');
+    conditions.push(`is_banned = $${params.length}`);
+  }
+  if (q.isMuted !== undefined) {
+    params.push(q.isMuted === 'true');
+    conditions.push(`is_muted = $${params.length}`);
+  }
+  if (q.search) {
+    params.push(`%${q.search}%`);
+    conditions.push(`(email ILIKE $${params.length} OR nickname ILIKE $${params.length})`);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const { rows } = await query(
+    `SELECT id, email, nickname, avatar_url, role,
+            reputation_score, is_banned, is_muted, banned_at, created_at
+     FROM users ${where}
+     ORDER BY created_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, size, page * size]
+  );
+  const { rows: cnt } = await query(
+    `SELECT COUNT(*) FROM users ${where}`, params
+  );
+  return pageResponse(rows, cnt[0].count, page, size);
+};
+
+const getUserDetail = async (id) => {
+  const { rows: u } = await query(
+    'SELECT * FROM users WHERE id = $1', [id]
+  );
+  if (!u.length) throw { errorCode: 'NOT_FOUND', status: 404 };
+
+  const { rows: bids } = await query(
+    `SELECT b.*, a.item_id, i.name AS item_name
+     FROM bids b
+     JOIN auctions a ON a.id = b.auction_id
+     JOIN items i    ON i.id = a.item_id
+     WHERE b.user_id = $1
+     ORDER BY b.bid_time DESC
+     LIMIT 20`,
+    [id]
+  );
+
+  const { rows: transactions } = await query(
+    `SELECT t.*
+     FROM transactions t
+     JOIN wallets w ON w.id = t.wallet_id
+     WHERE w.user_id = $1
+     ORDER BY t.created_at DESC
+     LIMIT 20`,
+    [id]
+  );
+
+  const { rows: items } = await query(
+    `SELECT * FROM items
+     WHERE current_owner_id = $1 AND status = 'IN_INVENTORY'`,
+    [id]
+  );
+
+  return { ...u[0], bidHistory: bids, transactionHistory: transactions, ownedItems: items };
+};
+
+const updateUserField = async (id, fields) => {
+  const keys = Object.keys(fields);
+  const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
+  const { rows } = await query(
+    `UPDATE users SET ${sets} WHERE id = $1 RETURNING *`,
+    [id, ...Object.values(fields)]
+  );
+  return rows[0];
+};
+
+// ── FINANCE ────────────────────────────────────────────────
+
+const getTransactions = async (q) => {
+  const { page, size } = parsePagination(q);
+  const conditions = [];
+  const params = [];
+
+  if (q.type) {
+    params.push(q.type);
+    conditions.push(`t.type = $${params.length}`);
+  }
+  if (q.status) {
+    params.push(q.status);
+    conditions.push(`t.status = $${params.length}`);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const { rows } = await query(
+    `SELECT t.*, u.nickname, u.email
+     FROM transactions t
+     JOIN wallets w ON w.id = t.wallet_id
+     JOIN users u   ON u.id = w.user_id
+     ${where}
+     ORDER BY t.created_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, size, page * size]
+  );
+  const { rows: cnt } = await query(
+    `SELECT COUNT(*) FROM transactions t ${where}`, params
+  );
+  return pageResponse(rows, cnt[0].count, page, size);
+};
+
+const approveTransaction = async (txId) => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: tx } = await client.query(
+      `SELECT * FROM transactions WHERE id = $1 AND status = 'PENDING' FOR UPDATE`,
+      [txId]
+    );
+    if (!tx.length) throw { errorCode: 'NOT_FOUND', status: 404, message: 'Transaction không tồn tại hoặc đã xử lý.' };
+
+    const { type, amount, wallet_id } = tx[0];
+
+    if (type === 'DEPOSIT') {
+      await client.query(
+        `UPDATE wallets SET balance_available = balance_available + $1 WHERE id = $2`,
+        [amount, wallet_id]
+      );
+    } else if (type === 'WITHDRAW') {
+      await client.query(
+        `UPDATE wallets SET balance_locked = balance_locked - $1 WHERE id = $2`,
+        [amount, wallet_id]
+      );
+    }
+
+    const { rows } = await client.query(
+      `UPDATE transactions SET status = 'COMPLETED' WHERE id = $1 RETURNING *`,
+      [txId]
+    );
+
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+};
+
+const rejectTransaction = async (txId) => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: tx } = await client.query(
+      `SELECT * FROM transactions WHERE id = $1 AND status = 'PENDING' FOR UPDATE`,
+      [txId]
+    );
+    if (!tx.length) throw { errorCode: 'NOT_FOUND', status: 404, message: 'Transaction không tồn tại hoặc đã xử lý.' };
+
+    const { type, amount, wallet_id } = tx[0];
+
+    if (type === 'WITHDRAW') {
+      // Hoàn tiền: locked → available
+      await client.query(
+        `UPDATE wallets
+         SET balance_available = balance_available + $1,
+             balance_locked    = balance_locked    - $1
+         WHERE id = $2`,
+        [amount, wallet_id]
+      );
+    }
+
+    const { rows } = await client.query(
+      `UPDATE transactions SET status = 'CANCELLED' WHERE id = $1 RETURNING *`,
+      [txId]
+    );
+
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+};
+
+const getP2pMessages = async (listingId) => {
+  const { rows } = await query(
+    `SELECT m.*, u.nickname, u.avatar_url
+     FROM messages m
+     JOIN users u ON u.id = m.sender_id
+     WHERE m.market_listing_id = $1
+     ORDER BY m.created_at ASC`,
+    [listingId]
+  );
+  return rows;
+};
 
 module.exports = {
   getItems, approveItem, rejectItem,
   createAuction, removeAuction,
   startSession, pauseSession, resumeSession, stopSession,
   resetTimer, deleteBid,
+  getUsers, getUserDetail, updateUserField,
+  getTransactions, approveTransaction, rejectTransaction,
+  getP2pMessages,
 };

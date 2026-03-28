@@ -4,6 +4,9 @@ const app  = require('./app');
 const { pool }   = require('./config/database.config');
 const { initWs } = require('./websocket/wsServer');
 const { startEnglishScheduler } = require('./schedulers/englishAuction.scheduler');
+const { startDutchScheduler }   = require('./schedulers/dutchAuction.scheduler');
+const { startSealedScheduler }  = require('./schedulers/sealedAuction.scheduler');
+const { restoreActiveState }    = require('./schedulers/sessionManager.scheduler');
 
 const PORT = process.env.PORT || 3000;
 
@@ -19,6 +22,10 @@ const start = async () => {
     console.log('[WS] Socket.io initialized ');
 
     startEnglishScheduler();
+    startDutchScheduler();
+    startSealedScheduler();
+
+    await restoreActiveState();
 
     httpServer.listen(PORT, () => {
       console.log(`BidVibe API running on http://localhost:${PORT}`);

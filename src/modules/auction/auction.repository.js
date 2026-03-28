@@ -315,7 +315,178 @@ const resolveProxyBids = async (auctionId, manualAmount, manualUserId) => {
   }
 };
 
+// ── DUTCH BID ──────────────────────────────────────────────
+
+const buyDutch = async ({ auctionId, userId }) => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Lock auction — optimistic lock via FOR UPDATE
+    const { rows: auc } = await client.query(
+      `SELECT a.*, i.seller_id
+       FROM auctions a
+       JOIN items i ON i.id = a.item_id
+       WHERE a.id = $1 AND a.status = 'ACTIVE'
+       FOR UPDATE`,
+      [auctionId]
+    );
+    if (!auc.length) {
+      throw { errorCode: 'AUCTION_NOT_ACTIVE', status: 400, message: 'Phiên đấu giá không còn hoạt động.' };
+    }
+
+    const auction = auc[0];
+
+    if (auction.seller_id === userId) {
+      throw { errorCode: 'SELLER_CANNOT_BID', status: 403, message: 'Người bán không thể mua vật phẩm của mình.' };
+    }
+
+    const price = parseFloat(auction.current_price);
+
+    // Check balance
+    const { rows: wallet } = await client.query(
+      'SELECT id, balance_available FROM wallets WHERE user_id = $1 FOR UPDATE',
+      [userId]
+    );
+    if (!wallet.length || parseFloat(wallet[0].balance_available) < price) {
+      throw { errorCode: 'INSUFFICIENT_BALANCE', status: 400, message: 'Số dư không đủ.' };
+    }
+
+    const fee = Math.round(price * 0.05);
+
+    // Trừ tiền buyer
+    await client.query(
+      `UPDATE wallets
+       SET balance_available = balance_available - $1
+       WHERE id = $2`,
+      [price, wallet[0].id]
+    );
+
+    // Ghi transactions
+    await client.query(
+      `INSERT INTO transactions (id, wallet_id, type, amount, status, reference_id, created_at)
+       VALUES
+         (gen_random_uuid(), $1, 'FINAL_PAYMENT', $2, 'COMPLETED', $3, now()),
+         (gen_random_uuid(), $1, 'PLATFORM_FEE',  $4, 'COMPLETED', $3, now())`,
+      [wallet[0].id, price, auctionId, fee]
+    );
+
+    // Ghi bid
+    await client.query(
+      `INSERT INTO bids (id, auction_id, user_id, amount, bid_time, is_proxy)
+       VALUES (gen_random_uuid(), $1, $2, $3, now(), false)`,
+      [auctionId, userId, price]
+    );
+
+    // Chuyển item
+    await client.query(
+      `UPDATE items
+       SET current_owner_id = $1,
+           status           = 'IN_INVENTORY',
+           cooldown_until   = now() + interval '12 hours'
+       WHERE id = $2`,
+      [userId, auction.item_id]
+    );
+
+    // Kết thúc auction
+    const { rows: updated } = await client.query(
+      `UPDATE auctions
+       SET status    = 'ENDED',
+           winner_id = $2,
+           version   = version + 1
+       WHERE id = $1
+       RETURNING *`,
+      [auctionId, userId]
+    );
+
+    await client.query('COMMIT');
+    return updated[0];
+  } catch (e) {
+    await client.query('ROLLBACK');
+    // PostgreSQL serialization error → 409
+    if (e.code === '40001') {
+      throw { errorCode: 'OPTIMISTIC_LOCK_CONFLICT', status: 409, message: 'Đã có người mua trước bạn.' };
+    }
+    throw e;
+  } finally {
+    client.release();
+  }
+};
+
+// ── SEALED BID ─────────────────────────────────────────────
+
+const placeSealedBid = async ({ auctionId, userId, amount }) => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: auc } = await client.query(
+      `SELECT a.*, i.seller_id
+       FROM auctions a
+       JOIN items i ON i.id = a.item_id
+       WHERE a.id = $1 AND a.status = 'ACTIVE'
+       FOR UPDATE`,
+      [auctionId]
+    );
+    if (!auc.length) {
+      throw { errorCode: 'AUCTION_NOT_ACTIVE', status: 400, message: 'Phiên đấu giá không còn hoạt động.' };
+    }
+    if (auc[0].seller_id === userId) {
+      throw { errorCode: 'SELLER_CANNOT_BID', status: 403 };
+    }
+
+    // Kiểm tra đã bid chưa — chỉ 1 lần
+    const { rows: existing } = await client.query(
+      'SELECT id FROM bids WHERE auction_id = $1 AND user_id = $2',
+      [auctionId, userId]
+    );
+    if (existing.length) {
+      throw { errorCode: 'BID_ALREADY_EXISTS', status: 409, message: 'Bạn đã đặt giá cho phiên đấu giá kín này rồi.' };
+    }
+
+    // Check + lock balance
+    const { rows: wallet } = await client.query(
+      'SELECT id, balance_available FROM wallets WHERE user_id = $1 FOR UPDATE',
+      [userId]
+    );
+    if (!wallet.length || parseFloat(wallet[0].balance_available) < parseFloat(amount)) {
+      throw { errorCode: 'INSUFFICIENT_BALANCE', status: 400, message: 'Số dư không đủ.' };
+    }
+
+    await client.query(
+      `UPDATE wallets
+       SET balance_available = balance_available - $1,
+           balance_locked    = balance_locked    + $1
+       WHERE id = $2`,
+      [amount, wallet[0].id]
+    );
+
+    await client.query(
+      `INSERT INTO transactions (id, wallet_id, type, amount, status, reference_id, created_at)
+       VALUES (gen_random_uuid(), $1, 'BID_LOCK', $2, 'COMPLETED', $3, now())`,
+      [wallet[0].id, amount, auctionId]
+    );
+
+    // Ghi bid — KHÔNG broadcast giá
+    const { rows: bid } = await client.query(
+      `INSERT INTO bids (id, auction_id, user_id, amount, bid_time, is_proxy)
+       VALUES (gen_random_uuid(), $1, $2, $3, now(), false)
+       RETURNING *`,
+      [auctionId, userId, amount]
+    );
+
+    await client.query('COMMIT');
+    return bid[0];
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   findById, findBids, findMessages,
   placeBid, upsertProxyBid, cancelProxyBid, resolveProxyBids,
+  buyDutch, placeSealedBid,
 };

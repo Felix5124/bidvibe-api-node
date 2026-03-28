@@ -10,5 +10,7 @@ router.post('/:id/bids',       authenticate, bidLimiter, ctrl.placeBid);
 router.post('/:id/proxy-bid',  authenticate, ctrl.setProxyBid);
 router.delete('/:id/proxy-bid', authenticate, ctrl.cancelProxyBid);
 router.post('/:id/messages',   authenticate, ctrl.sendMessage);
+router.post('/:id/buy',        authenticate, ctrl.buyDutch);
+router.post('/:id/sealed-bid', authenticate, ctrl.placeSealedBid);
 
 module.exports = router;

@@ -8,5 +8,7 @@ const placeBid       = async (req, res, next) => { try { created(res, await serv
 const setProxyBid    = async (req, res, next) => { try { ok(res, await service.setProxyBid(req.params.id, req.user.id, req.body.maxAmount)); } catch (e) { next(e); } };
 const cancelProxyBid = async (req, res, next) => { try { ok(res, await service.cancelProxyBid(req.params.id, req.user.id)); } catch (e) { next(e); } };
 const sendMessage    = async (req, res, next) => { try { created(res, await service.sendMessage(req.params.id, req.user.id, req.body.content)); } catch (e) { next(e); } };
+const buyDutch       = async (req, res, next) => { try { ok(res, await service.buyDutch(req.params.id, req.user.id)); } catch (e) { next(e); } };
+const placeSealedBid = async (req, res, next) => { try { created(res, await service.placeSealedBid(req.params.id, req.user.id, req.body.amount)); } catch (e) { next(e); } };
 
-module.exports = { getAuction, getBids, getMessages, placeBid, setProxyBid, cancelProxyBid, sendMessage };
+module.exports = { getAuction, getBids, getMessages, placeBid, setProxyBid, cancelProxyBid, sendMessage, buyDutch, placeSealedBid };

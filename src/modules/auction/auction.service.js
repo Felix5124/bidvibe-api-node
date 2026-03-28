@@ -90,8 +90,40 @@ const sendMessage = async (auctionId, userId, content) => {
   );
   return rows[0];
 };
+const buyDutch = async (auctionId, userId) => {
+  const { rows: u } = await query('SELECT is_banned FROM users WHERE id = $1', [userId]);
+  if (u[0]?.is_banned) throw { errorCode: ErrorCode.USER_BANNED, status: 403 };
+
+  const auction = await repo.buyDutch({ auctionId, userId });
+
+  // Broadcast kết thúc
+  const { publishAuctionEnded } = require('../../websocket/publishers/auctionPublisher');
+  publishAuctionEnded(auctionId, {
+    auctionId,
+    winnerId:   auction.winner_id,
+    finalPrice: auction.current_price,
+    status:     'ENDED',
+  });
+
+  // Notify người thắng
+  await notifService.send(
+    userId,
+    NotificationType.AUCTION_WON,
+    ' Bạn đã mua thành công!',
+    `Bạn vừa mua với giá ${parseFloat(auction.current_price).toLocaleString('vi-VN')}đ.`
+  );
+
+  return auction;
+};
+
+const placeSealedBid = async (auctionId, userId, amount) => {
+  const { rows: u } = await query('SELECT is_banned FROM users WHERE id = $1', [userId]);
+  if (u[0]?.is_banned) throw { errorCode: ErrorCode.USER_BANNED, status: 403 };
+  return repo.placeSealedBid({ auctionId, userId, amount });
+};
 
 module.exports = {
   getAuction, getBids, getMessages,
   placeBid, setProxyBid, cancelProxyBid, sendMessage,
+  buyDutch, placeSealedBid,
 };

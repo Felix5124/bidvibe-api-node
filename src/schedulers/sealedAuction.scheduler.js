@@ -136,7 +136,7 @@ const startSealedScheduler = () => {
     }
   });
 
-  console.log('[SealedScheduler] Started ✓');
+  console.log('[SealedScheduler] Started');
 };
 
 module.exports = { startSealedScheduler };

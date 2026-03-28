@@ -14,6 +14,7 @@ const sessionRoutes = require('./modules/session/session.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 const auctionRoutes = require('./modules/auction/auction.routes');
 const marketRoutes = require('./modules/market/market.routes');
+const ratingRoutes = require('./modules/rating/rating.routes');
 
 
 const app = express();
@@ -31,6 +32,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auctions', auctionRoutes);
 app.use('/api/market', marketRoutes);
+app.use('/api/ratings', ratingRoutes);
 
 
 // Health check

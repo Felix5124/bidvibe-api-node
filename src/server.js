@@ -3,6 +3,7 @@ const http = require('http');
 const app  = require('./app');
 const { pool }   = require('./config/database.config');
 const { initWs } = require('./websocket/wsServer');
+const { startEnglishScheduler } = require('./schedulers/englishAuction.scheduler');
 
 const PORT = process.env.PORT || 3000;
 
@@ -15,7 +16,9 @@ const start = async () => {
 
     // Khởi động WebSocket
     initWs(httpServer);
-    console.log('[WS] Socket.io initialized ✓');
+    console.log('[WS] Socket.io initialized ');
+
+    startEnglishScheduler();
 
     httpServer.listen(PORT, () => {
       console.log(`BidVibe API running on http://localhost:${PORT}`);

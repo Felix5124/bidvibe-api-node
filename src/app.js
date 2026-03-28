@@ -12,6 +12,8 @@ const itemRoutes = require('./modules/item/item.routes');
 const notificationRoutes = require('./modules/notification/notification.routes');
 const sessionRoutes = require('./modules/session/session.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
+const auctionRoutes = require('./modules/auction/auction.routes');
+
 
 const app = express();
 
@@ -26,6 +28,7 @@ app.use('/api/items', itemRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/auctions', auctionRoutes);
 
 
 // Health check

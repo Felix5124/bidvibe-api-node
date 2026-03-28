@@ -518,6 +518,106 @@ const getP2pMessages = async (listingId) => {
   );
   return rows;
 };
+// ── ANALYTICS ─────────────────────────────────────────────
+
+const getOverview = async () => {
+  const { rows: users } = await query(`
+    SELECT
+      COUNT(*)                                                    AS total_users,
+      COUNT(*) FILTER (WHERE created_at >= now() - interval '7 days') AS active_users_last7
+    FROM users
+  `);
+
+  const { rows: items } = await query(`
+    SELECT COUNT(*) AS pending
+    FROM items WHERE status = 'PENDING'
+  `);
+
+  const { rows: sessions } = await query(`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'ACTIVE')    AS active_sessions,
+      COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed_sessions
+    FROM auction_sessions
+  `);
+
+  const { rows: revenue } = await query(`
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM transactions
+    WHERE type = 'PLATFORM_FEE' AND status = 'COMPLETED'
+  `);
+
+  return {
+    totalUsers:             parseInt(users[0].total_users),
+    activeUsersLast7Days:   parseInt(users[0].active_users_last7),
+    totalItemsPending:      parseInt(items[0].pending),
+    activeSessions:         parseInt(sessions[0].active_sessions),
+    completedSessions:      parseInt(sessions[0].completed_sessions),
+    totalRevenuePlatformFee: parseFloat(revenue[0].total),
+  };
+};
+
+const getRevenue = async (q) => {
+  const { period = 'daily', from, to } = q;
+
+  const groupBy =
+    period === 'monthly' ? "DATE_TRUNC('month', created_at)" :
+    period === 'weekly'  ? "DATE_TRUNC('week',  created_at)" :
+                           "DATE(created_at)";
+
+  const params = [];
+  let where = "WHERE type = 'PLATFORM_FEE' AND status = 'COMPLETED'";
+
+  if (from) { params.push(from); where += ` AND created_at >= $${params.length}`; }
+  if (to)   { params.push(to);   where += ` AND created_at <= $${params.length}`; }
+
+  const { rows } = await query(
+    `SELECT
+       ${groupBy}      AS period,
+       SUM(amount)     AS revenue,
+       COUNT(*)        AS total_transactions
+     FROM transactions
+     ${where}
+     GROUP BY 1
+     ORDER BY 1 ASC`,
+    params
+  );
+
+  return rows;
+};
+
+const getAuctionStats = async () => {
+  const { rows } = await query(`
+    SELECT
+      COUNT(*)                                                       AS total_auctions,
+      COUNT(*) FILTER (WHERE winner_id IS NOT NULL)                  AS auctions_with_winner,
+      COUNT(*) FILTER (WHERE winner_id IS NULL AND status = 'ENDED') AS auctions_no_bid,
+      COALESCE(AVG(current_price) FILTER (WHERE winner_id IS NOT NULL), 0) AS avg_winning_price
+    FROM auctions
+    WHERE status = 'ENDED'
+  `);
+
+  const { rows: bidStats } = await query(`
+    SELECT
+      COUNT(*)      AS total_bids,
+      AVG(amount)   AS avg_bid_amount
+    FROM bids
+  `);
+
+  return { ...rows[0], ...bidStats[0] };
+};
+
+const getMarketStats = async () => {
+  const { rows } = await query(`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'SOLD')   AS total_sold,
+      COUNT(*) FILTER (WHERE status = 'ACTIVE') AS active_listings,
+      COALESCE(AVG(asking_price) FILTER (WHERE status = 'SOLD'), 0) AS avg_sold_price,
+      COALESCE(SUM(asking_price) FILTER (WHERE status = 'SOLD'), 0) AS total_volume
+    FROM market_listings
+  `);
+
+  return rows[0];
+};
 
 module.exports = {
   getItems, approveItem, rejectItem,
@@ -527,4 +627,5 @@ module.exports = {
   getUsers, getUserDetail, updateUserField,
   getTransactions, approveTransaction, rejectTransaction,
   getP2pMessages,
+  getOverview, getRevenue, getAuctionStats, getMarketStats,
 };

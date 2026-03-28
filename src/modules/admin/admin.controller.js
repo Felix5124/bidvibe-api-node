@@ -33,6 +33,11 @@ const getAdminTransactions  = async (req, res, next) => { try { ok(res, await se
 const approveTransaction    = async (req, res, next) => { try { ok(res, await service.approveTransaction(req.params.id)); } catch (e) { next(e); } };
 const rejectTransaction     = async (req, res, next) => { try { ok(res, await service.rejectTransaction(req.params.id)); } catch (e) { next(e); } };
 const getP2pMessages        = async (req, res, next) => { try { ok(res, await service.getP2pMessages(req.params.id)); } catch (e) { next(e); } };
+// ── ANALYTICS ─────────────────────────────────────────────
+const getOverview     = async (req, res, next) => { try { ok(res, await service.getOverview()); } catch (e) { next(e); } };
+const getRevenue      = async (req, res, next) => { try { ok(res, await service.getRevenue(req.query)); } catch (e) { next(e); } };
+const getAuctionStats = async (req, res, next) => { try { ok(res, await service.getAuctionStats()); } catch (e) { next(e); } };
+const getMarketStats  = async (req, res, next) => { try { ok(res, await service.getMarketStats()); } catch (e) { next(e); } };
 
 module.exports = {
   getItems, getItem, approveItem, rejectItem,
@@ -43,4 +48,5 @@ module.exports = {
   muteUser, unmuteUser, banUser, unbanUser, kickUser,
   getAdminTransactions, approveTransaction, rejectTransaction,
   getP2pMessages,
+  getOverview, getRevenue, getAuctionStats, getMarketStats,
 };

@@ -12,24 +12,35 @@ const PORT = process.env.PORT || 3000;
 
 const start = async () => {
   try {
+    // Test DB
     await pool.query('SELECT 1');
-    console.log('[DB] Connected to Supabase PostgreSQL');
+    console.log('[DB] Connected to Supabase PostgreSQL ✓');
 
+    // HTTP Server
     const httpServer = http.createServer(app);
 
-    // Khởi động WebSocket
+    // WebSocket
     initWs(httpServer);
-    console.log('[WS] Socket.io initialized ');
+    console.log('[WS] Socket.io initialized ✓');
 
+    // Schedulers
     startEnglishScheduler();
     startDutchScheduler();
     startSealedScheduler();
 
+    // Crash recovery
     await restoreActiveState();
 
+    // Listen
     httpServer.listen(PORT, () => {
-      console.log(`BidVibe API running on http://localhost:${PORT}`);
-      console.log(`ENV: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`\n BidVibe API running on http://localhost:${PORT}`);
+      console.log(`   ENV: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`\n Routes:`);
+      console.log(`   GET  /health`);
+      console.log(`   /api/users, /api/wallet, /api/items`);
+      console.log(`   /api/sessions, /api/auctions, /api/market`);
+      console.log(`   /api/notifications, /api/ratings, /api/analytics`);
+      console.log(`   /api/admin`);
     });
   } catch (err) {
     console.error('[Server] Failed to start:', err.message);

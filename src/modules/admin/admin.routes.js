@@ -39,4 +39,10 @@ router.post('/transactions/:id/approve',       ctrl.approveTransaction);
 router.post('/transactions/:id/reject',        ctrl.rejectTransaction);
 router.get('/market/listings/:id/messages',    ctrl.getP2pMessages);
 
+// Analytics
+router.get('/analytics/overview',  ctrl.getOverview);
+router.get('/analytics/revenue',   ctrl.getRevenue);
+router.get('/analytics/auctions',  ctrl.getAuctionStats);
+router.get('/analytics/market',    ctrl.getMarketStats);
+
 module.exports = router;

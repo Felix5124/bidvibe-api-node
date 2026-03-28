@@ -155,6 +155,12 @@ const rejectTransaction = async (txId) => {
 };
 
 const getP2pMessages = (listingId) => repo.getP2pMessages(listingId);
+// ── ANALYTICS ─────────────────────────────────────────────
+
+const getOverview     = ()  => repo.getOverview();
+const getRevenue      = (q) => repo.getRevenue(q);
+const getAuctionStats = ()  => repo.getAuctionStats();
+const getMarketStats  = ()  => repo.getMarketStats();
 
 module.exports = {
   getItems, getItem, approveItem, rejectItem,
@@ -165,4 +171,5 @@ module.exports = {
   muteUser, unmuteUser, banUser, unbanUser, kickUser,
   getAdminTransactions, approveTransaction, rejectTransaction,
   getP2pMessages,
+  getOverview, getRevenue, getAuctionStats, getMarketStats,
 };

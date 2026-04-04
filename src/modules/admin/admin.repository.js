@@ -546,6 +546,13 @@ const getOverview = async () => {
     WHERE type = 'PLATFORM_FEE' AND status = 'COMPLETED'
   `);
 
+  const { rows: pendingTx } = await query(`
+    SELECT
+      COUNT(*) FILTER (WHERE type = 'DEPOSIT'  AND status = 'PENDING') AS pending_deposits,
+      COUNT(*) FILTER (WHERE type = 'WITHDRAW' AND status = 'PENDING') AS pending_withdrawals
+    FROM transactions
+  `);
+
   return {
     totalUsers:             parseInt(users[0].total_users),
     activeUsersLast7Days:   parseInt(users[0].active_users_last7),
@@ -553,6 +560,8 @@ const getOverview = async () => {
     activeSessions:         parseInt(sessions[0].active_sessions),
     completedSessions:      parseInt(sessions[0].completed_sessions),
     totalRevenuePlatformFee: parseFloat(revenue[0].total),
+    pendingDeposits:        parseInt(pendingTx[0].pending_deposits),
+    pendingWithdrawals:     parseInt(pendingTx[0].pending_withdrawals),
   };
 };
 
@@ -589,17 +598,18 @@ const getAuctionStats = async () => {
   const { rows } = await query(`
     SELECT
       COUNT(*)                                                       AS total_auctions,
+      COUNT(*) FILTER (WHERE status = 'ACTIVE')                     AS active_auctions,
       COUNT(*) FILTER (WHERE winner_id IS NOT NULL)                  AS auctions_with_winner,
       COUNT(*) FILTER (WHERE winner_id IS NULL AND status = 'ENDED') AS auctions_no_bid,
       COALESCE(AVG(current_price) FILTER (WHERE winner_id IS NOT NULL), 0) AS avg_winning_price
     FROM auctions
-    WHERE status = 'ENDED'
   `);
 
   const { rows: bidStats } = await query(`
     SELECT
       COUNT(*)      AS total_bids,
-      AVG(amount)   AS avg_bid_amount
+      AVG(amount)   AS avg_bid_amount,
+      COALESCE(SUM(amount), 0) AS total_volume
     FROM bids
   `);
 

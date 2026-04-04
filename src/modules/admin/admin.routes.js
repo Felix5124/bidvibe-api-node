@@ -13,6 +13,9 @@ router.post('/items/:id/approve',       ctrl.approveItem);
 router.post('/items/:id/reject',        ctrl.rejectItem);
 
 // Sessions
+router.get('/sessions',                           ctrl.getSessions);
+router.get('/sessions/:id',                       ctrl.getSession);
+router.get('/sessions/:id/auctions',              ctrl.getSessionAuctions);
 router.post('/sessions',                          ctrl.createSession);
 router.post('/sessions/:id/auctions',             ctrl.addAuction);
 router.delete('/sessions/:id/auctions/:auctionId', ctrl.removeAuction);

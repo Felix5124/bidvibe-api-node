@@ -5,6 +5,7 @@ const notifService   = require('../notification/notification.service');
 const { NotificationType } = require('../../constants/enums');
 const { ErrorCode }  = require('../../constants/errorCodes');
 const { publishAuctionUpdate } = require('../../websocket/publishers/auctionPublisher');
+const { query }      = require('../../config/database.config');
 
 // ── ITEMS ──────────────────────────────────────────────────
 
@@ -36,6 +37,21 @@ const rejectItem = async (itemId, reason) => {
 };
 
 // ── SESSIONS ───────────────────────────────────────────────
+
+const getSessions = (q) => sessionRepo.findAll(q);
+
+const getSession = async (id) => {
+  const session = await sessionRepo.findById(id);
+  if (!session) {
+    throw { errorCode: ErrorCode.NOT_FOUND, status: 404, message: 'Phiên đấu giá không tồn tại.' };
+  }
+  return session;
+};
+
+const getSessionAuctions = async (sessionId) => {
+  await getSession(sessionId);
+  return sessionRepo.findAuctions(sessionId);
+};
 
 const createSession = (body) => sessionRepo.create(body);
 
@@ -164,6 +180,7 @@ const getMarketStats  = ()  => repo.getMarketStats();
 
 module.exports = {
   getItems, getItem, approveItem, rejectItem,
+  getSessions, getSession, getSessionAuctions,
   createSession, addAuction, removeAuction,
   startSession, pauseSession, resumeSession, stopSession,
   resetTimer, deleteBid,

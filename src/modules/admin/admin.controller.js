@@ -8,6 +8,9 @@ const approveItem = async (req, res, next) => { try { ok(res, await service.appr
 const rejectItem  = async (req, res, next) => { try { ok(res, await service.rejectItem(req.params.id, req.body.reason)); } catch (e) { next(e); } };
 
 // ── SESSIONS ───────────────────────────────────────────────
+const getSessions    = async (req, res, next) => { try { ok(res, await service.getSessions(req.query)); } catch (e) { next(e); } };
+const getSession     = async (req, res, next) => { try { ok(res, await service.getSession(req.params.id)); } catch (e) { next(e); } };
+const getSessionAuctions = async (req, res, next) => { try { ok(res, await service.getSessionAuctions(req.params.id)); } catch (e) { next(e); } };
 const createSession  = async (req, res, next) => { try { created(res, await service.createSession(req.body)); } catch (e) { next(e); } };
 const addAuction     = async (req, res, next) => { try { created(res, await service.addAuction(req.params.id, req.body)); } catch (e) { next(e); } };
 const removeAuction  = async (req, res, next) => { try { ok(res, await service.removeAuction(req.params.auctionId)); } catch (e) { next(e); } };
@@ -41,6 +44,7 @@ const getMarketStats  = async (req, res, next) => { try { ok(res, await service.
 
 module.exports = {
   getItems, getItem, approveItem, rejectItem,
+  getSessions, getSession, getSessionAuctions,
   createSession, addAuction, removeAuction,
   startSession, pauseSession, resumeSession, stopSession,
   resetTimer, deleteBid,

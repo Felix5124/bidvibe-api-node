@@ -89,21 +89,43 @@ const deleteBid = async (bidId) => {
 const getUsers     = (q) => repo.getUsers(q);
 const getUser      = (id) => repo.getUserDetail(id);
 const updateRole   = (id, role) => repo.updateUserField(id, { role });
-const muteUser     = (id) => repo.updateUserField(id, { is_muted: true });
-const unmuteUser   = (id) => repo.updateUserField(id, { is_muted: false });
+const muteUser   = async (id) => {
+  const updated = await repo.updateUserField(id, { is_muted: true });
+  try {
+    await notifService.send(
+      id,
+      NotificationType.MODERATION,
+      'Tài khoản bị tắt chat',
+      'Quản trị viên đã tắt chat của bạn.'
+    );
+  } catch (e) {
+    console.error('[AdminService] Failed to send mute notification:', e.message);
+  }
+  return updated;
+};
+const unmuteUser = (id) => repo.updateUserField(id, { is_muted: false });
 
 const banUser = async (id, reason) => {
-  const updated = await repo.updateUserField(id, {
-    is_banned: true,
-    banned_at: new Date().toISOString(),
-  });
-  await notifService.send(
-    id,
-    NotificationType.MODERATION,
-    'Tài khoản bị khóa',
-    `Tài khoản của bạn đã bị khóa. Lý do: ${reason || 'Vi phạm điều khoản.'}`
-  );
-  return updated;
+  try {
+    const updated = await repo.updateUserField(id, {
+      is_banned: true,
+      banned_at: new Date().toISOString(),
+    });
+    try {
+      await notifService.send(
+        id,
+        NotificationType.MODERATION,
+        'Tài khoản bị khóa',
+        `Tài khoản của bạn đã bị khóa. Lý do: ${reason || 'Vi phạm điều khoản.'}`
+      );
+    } catch (e) {
+      console.error('[AdminService] Failed to send ban notification:', e.message);
+    }
+    return updated;
+  } catch (err) {
+    console.error('[banUser] Error:', err);
+    throw err;
+  }
 };
 
 const unbanUser = (id) =>
@@ -133,7 +155,16 @@ const kickUser = async (userId, auctionId) => {
 
 // ── FINANCE ────────────────────────────────────────────────
 
+const walletService = require('../wallet/wallet.service');
+
 const getAdminTransactions = (q) => repo.getTransactions(q);
+
+const getPendingTransactions = () => walletService.getPendingTransactions();
+
+const approveDeposit = (txId) => walletService.approveDeposit(txId);
+const rejectDeposit = (txId) => walletService.rejectDeposit(txId);
+const approveWithdraw = (txId) => walletService.approveWithdraw(txId);
+const rejectWithdraw = (txId) => walletService.rejectWithdraw(txId);
 
 const approveTransaction = async (txId) => {
   const tx = await repo.approveTransaction(txId);
@@ -186,7 +217,9 @@ module.exports = {
   resetTimer, deleteBid,
   getUsers, getUser, updateRole,
   muteUser, unmuteUser, banUser, unbanUser, kickUser,
-  getAdminTransactions, approveTransaction, rejectTransaction,
+  getAdminTransactions, getPendingTransactions,
+  approveTransaction, rejectTransaction,
+  approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw,
   getP2pMessages,
   getOverview, getRevenue, getAuctionStats, getMarketStats,
 };

@@ -2,7 +2,9 @@ const router = require('express').Router();
 const { authenticate } = require('../../middlewares/auth.middleware');
 const { bidLimiter }   = require('../../middlewares/rateLimiter.middleware');
 const ctrl = require('./auction.controller');
+const sessionCtrl = require('../session/session.controller');
 
+router.get('/session/:sessionId', sessionCtrl.getSessionAuctions);
 router.get('/:id',             ctrl.getAuction);
 router.get('/:id/bids',        ctrl.getBids);
 router.get('/:id/messages',    ctrl.getMessages);

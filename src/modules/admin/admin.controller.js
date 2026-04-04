@@ -5,7 +5,7 @@ const { ok, created } = require('../../utils/apiResponse');
 const getItems    = async (req, res, next) => { try { ok(res, await service.getItems(req.query)); } catch (e) { next(e); } };
 const getItem     = async (req, res, next) => { try { ok(res, await service.getItem(req.params.id)); } catch (e) { next(e); } };
 const approveItem = async (req, res, next) => { try { ok(res, await service.approveItem(req.params.id, req.body)); } catch (e) { next(e); } };
-const rejectItem  = async (req, res, next) => { try { ok(res, await service.rejectItem(req.params.id, req.body.reason)); } catch (e) { next(e); } };
+const rejectItem  = async (req, res, next) => { try { ok(res, await service.rejectItem(req.params.id, req.body?.reason)); } catch (e) { next(e); } };
 
 // ── SESSIONS ───────────────────────────────────────────────
 const getSessions    = async (req, res, next) => { try { ok(res, await service.getSessions(req.query)); } catch (e) { next(e); } };
@@ -24,15 +24,20 @@ const deleteBid      = async (req, res, next) => { try { ok(res, await service.d
 // ── USERS ──────────────────────────────────────────────────
 const getUsers   = async (req, res, next) => { try { ok(res, await service.getUsers(req.query)); } catch (e) { next(e); } };
 const getUser    = async (req, res, next) => { try { ok(res, await service.getUser(req.params.id)); } catch (e) { next(e); } };
-const updateRole = async (req, res, next) => { try { ok(res, await service.updateRole(req.params.id, req.body.role)); } catch (e) { next(e); } };
+const updateRole = async (req, res, next) => { try { ok(res, await service.updateRole(req.params.id, req.body?.role)); } catch (e) { next(e); } };
 const muteUser   = async (req, res, next) => { try { ok(res, await service.muteUser(req.params.id)); } catch (e) { next(e); } };
 const unmuteUser = async (req, res, next) => { try { ok(res, await service.unmuteUser(req.params.id)); } catch (e) { next(e); } };
-const banUser    = async (req, res, next) => { try { ok(res, await service.banUser(req.params.id, req.body.reason)); } catch (e) { next(e); } };
+const banUser    = async (req, res, next) => { try { ok(res, await service.banUser(req.params.id, req.body?.reason)); } catch (e) { next(e); } };
 const unbanUser  = async (req, res, next) => { try { ok(res, await service.unbanUser(req.params.id)); } catch (e) { next(e); } };
-const kickUser   = async (req, res, next) => { try { ok(res, await service.kickUser(req.params.id, req.body.auctionId)); } catch (e) { next(e); } };
+const kickUser   = async (req, res, next) => { try { ok(res, await service.kickUser(req.params.id, req.body?.auctionId)); } catch (e) { next(e); } };
 
 // ── FINANCE ────────────────────────────────────────────────
 const getAdminTransactions  = async (req, res, next) => { try { ok(res, await service.getAdminTransactions(req.query)); } catch (e) { next(e); } };
+const getPendingTransactions = async (req, res, next) => { try { ok(res, await service.getPendingTransactions()); } catch (e) { next(e); } };
+const approveDeposit        = async (req, res, next) => { try { ok(res, await service.approveDeposit(req.params.id)); } catch (e) { next(e); } };
+const rejectDeposit         = async (req, res, next) => { try { ok(res, await service.rejectDeposit(req.params.id)); } catch (e) { next(e); } };
+const approveWithdraw       = async (req, res, next) => { try { ok(res, await service.approveWithdraw(req.params.id)); } catch (e) { next(e); } };
+const rejectWithdraw        = async (req, res, next) => { try { ok(res, await service.rejectWithdraw(req.params.id)); } catch (e) { next(e); } };
 const approveTransaction    = async (req, res, next) => { try { ok(res, await service.approveTransaction(req.params.id)); } catch (e) { next(e); } };
 const rejectTransaction     = async (req, res, next) => { try { ok(res, await service.rejectTransaction(req.params.id)); } catch (e) { next(e); } };
 const getP2pMessages        = async (req, res, next) => { try { ok(res, await service.getP2pMessages(req.params.id)); } catch (e) { next(e); } };
@@ -50,7 +55,9 @@ module.exports = {
   resetTimer, deleteBid,
   getUsers, getUser, updateRole,
   muteUser, unmuteUser, banUser, unbanUser, kickUser,
-  getAdminTransactions, approveTransaction, rejectTransaction,
+  getAdminTransactions, getPendingTransactions,
+  approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw,
+  approveTransaction, rejectTransaction,
   getP2pMessages,
   getOverview, getRevenue, getAuctionStats, getMarketStats,
 };

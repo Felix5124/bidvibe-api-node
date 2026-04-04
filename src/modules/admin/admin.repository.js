@@ -1,6 +1,33 @@
 const { query, getClient } = require('../../config/database.config');
 const { pageResponse, parsePagination } = require('../../utils/pagination');
 
+// ── HELPERS ─────────────────────────────────────────────────
+
+const normalizeUser = (user) => {
+  if (!user) return null;
+  return {
+    ...user,
+    avatarUrl: user.avatar_url,
+    reputationScore: user.reputation_score,
+    isBanned: user.is_banned,
+    isMuted: user.is_muted,
+    bannedAt: user.banned_at,
+    createdAt: user.created_at,
+  };
+};
+
+const normalizeItem = (item) => {
+  if (!item) return null;
+  return {
+    ...item,
+    imageUrls: item.image_urls,
+    sellerId: item.seller_id,
+    currentOwnerId: item.current_owner_id,
+    cooldownUntil: item.cooldown_until,
+    createdAt: item.created_at,
+  };
+};
+
 // ── ITEMS ──────────────────────────────────────────────────
 
 const getItems = async (q) => {
@@ -27,7 +54,7 @@ const getItems = async (q) => {
     `SELECT COUNT(*) FROM items i ${where}`,
     params
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+  return pageResponse(rows.map(normalizeItem), cnt[0].count, page, size);
 };
 
 const approveItem = async (itemId, { tags, rarity, startPrice }) => {
@@ -345,7 +372,7 @@ const getUsers = async (q) => {
   const { rows: cnt } = await query(
     `SELECT COUNT(*) FROM users ${where}`, params
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+  return pageResponse(rows.map(normalizeUser), cnt[0].count, page, size);
 };
 
 const getUserDetail = async (id) => {
@@ -381,17 +408,31 @@ const getUserDetail = async (id) => {
     [id]
   );
 
-  return { ...u[0], bidHistory: bids, transactionHistory: transactions, ownedItems: items };
+  return {
+    ...normalizeUser(u[0]),
+    bidHistory: bids,
+    transactionHistory: transactions,
+    ownedItems: items.map(normalizeItem),
+  };
 };
 
 const updateUserField = async (id, fields) => {
   const keys = Object.keys(fields);
+  if (keys.length === 0) return null;
+  
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-  const { rows } = await query(
-    `UPDATE users SET ${sets} WHERE id = $1 RETURNING *`,
-    [id, ...Object.values(fields)]
-  );
-  return rows[0];
+  const values = Object.values(fields);
+  
+  try {
+    const { rows } = await query(
+      `UPDATE users SET ${sets} WHERE id = $1 RETURNING *`,
+      [id, ...values]
+    );
+    return normalizeUser(rows[0]);
+  } catch (err) {
+    console.error('[updateUserField] Error:', err.message, { id, fields, sets, values });
+    throw err;
+  }
 };
 
 // ── FINANCE ────────────────────────────────────────────────

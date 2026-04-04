@@ -38,6 +38,11 @@ router.post('/users/:id/kick',          ctrl.kickUser);
 
 // Finance
 router.get('/transactions',                    ctrl.getAdminTransactions);
+router.get('/transactions/pending',            ctrl.getPendingTransactions);
+router.post('/transactions/:id/approve-deposit',  ctrl.approveDeposit);
+router.post('/transactions/:id/reject-deposit',   ctrl.rejectDeposit);
+router.post('/transactions/:id/approve-withdraw', ctrl.approveWithdraw);
+router.post('/transactions/:id/reject-withdraw',  ctrl.rejectWithdraw);
 router.post('/transactions/:id/approve',       ctrl.approveTransaction);
 router.post('/transactions/:id/reject',        ctrl.rejectTransaction);
 router.get('/market/listings/:id/messages',    ctrl.getP2pMessages);

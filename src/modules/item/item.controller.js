@@ -21,4 +21,14 @@ const confirmReceipt = async (req, res, next) => {
   catch (e) { next(e); }
 };
 
-module.exports = { createItem, getItem, getInventory, confirmReceipt };
+const deleteItem = async (req, res, next) => {
+  try { ok(res, await service.deleteRejectedItem(req.params.id, req.user.id)); }
+  catch (e) { next(e); }
+};
+
+const listOnMarket = async (req, res, next) => {
+  try { created(res, await service.listOnMarket(req.user.id, req.body)); }
+  catch (e) { next(e); }
+};
+
+module.exports = { createItem, getItem, getInventory, confirmReceipt, deleteItem, listOnMarket };

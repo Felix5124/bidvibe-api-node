@@ -1,9 +1,20 @@
 const { query } = require('../../config/database.config');
 const { pageResponse, parsePagination } = require('../../utils/pagination');
 
+const normalizeUser = (user) => {
+  if (!user) return null;
+  return {
+    ...user,
+    reputationScore: user.reputation_score,
+    avatarUrl: user.avatar_url,
+    createdAt: user.created_at,
+    bannedAt: user.banned_at,
+  };
+};
+
 const findById = async (id) => {
   const { rows } = await query('SELECT * FROM users WHERE id = $1', [id]);
-  return rows[0];
+  return normalizeUser(rows[0]);
 };
 
 const findPublicById = async (id) => {
@@ -12,7 +23,7 @@ const findPublicById = async (id) => {
      FROM users WHERE id = $1`,
     [id]
   );
-  return rows[0];
+  return normalizeUser(rows[0]);
 };
 
 const update = async (id, { nickname, avatarUrl, phone, address }) => {
@@ -23,7 +34,7 @@ const update = async (id, { nickname, avatarUrl, phone, address }) => {
      RETURNING *`,
     [id, nickname, avatarUrl, phone, address]
   );
-  return rows[0];
+  return normalizeUser(rows[0]);
 };
 
 const findRatings = async (userId, q) => {

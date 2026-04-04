@@ -40,4 +40,18 @@ const create = async ({ fromUserId, toUserId, auctionId, marketListingId, stars,
   }
 };
 
-module.exports = { create };
+const findByUserId = async (userId) => {
+  const { rows } = await query(
+    `SELECT r.*, 
+            u.nickname AS from_user_nickname, 
+            u.avatar_url AS from_user_avatar
+     FROM ratings r
+     JOIN users u ON u.id = r.from_user_id
+     WHERE r.to_user_id = $1
+     ORDER BY r.created_at DESC`,
+    [userId]
+  );
+  return rows;
+};
+
+module.exports = { create, findByUserId };

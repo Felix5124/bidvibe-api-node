@@ -7,6 +7,8 @@ const { WsEvents } = require('../../constants/wsEvents');
 
 const getListings  = (q) => repo.findAll(q);
 
+const getMyActiveListings = (userId) => repo.findBySellerId(userId);
+
 const getListing = async (id) => {
   const listing = await repo.findById(id);
   if (!listing) throw { errorCode: ErrorCode.NOT_FOUND, status: 404, message: 'Listing không tồn tại.' };
@@ -62,7 +64,8 @@ const buyListing = async (listingId, buyerId) => {
     listing.seller_id,
     NotificationType.FINANCE,
     '💰 Bán hàng thành công!',
-    `Vật phẩm của bạn vừa được mua với giá ${parseFloat(listing.asking_price).toLocaleString('vi-VN')}đ.`
+    `Vật phẩm của bạn vừa được mua với giá ${parseFloat(listing.asking_price).toLocaleString('vi-VN')}đ.`,
+    listingId
   );
 
   return listing;
@@ -93,7 +96,8 @@ const sendMessage = async (listingId, senderId, content) => {
 };
 
 module.exports = {
-  getListings, getListing, createListing,
+  getListings, getMyActiveListings, getListing,
+  createListing,
   cancelListing, buyListing,
   getMessages, sendMessage,
 };

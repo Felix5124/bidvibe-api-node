@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 
 const start = async () => {
   try {
+    console.log('[Server] Starting BidVibe API...');
     // Test DB
     await pool.query('SELECT 1');
     console.log('[DB] Connected to Supabase PostgreSQL ✓');

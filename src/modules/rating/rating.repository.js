@@ -40,9 +40,23 @@ const create = async ({ fromUserId, toUserId, auctionId, marketListingId, stars,
   }
 };
 
+const normalizeRating = (row) => {
+  if (!row) return null;
+  const { from_user_nickname, from_user_avatar, ...rest } = row;
+  return {
+    ...rest,
+    fromUser: {
+      id: row.from_user_id,
+      nickname: from_user_nickname,
+      avatarUrl: from_user_avatar,
+    },
+  };
+};
+
 const findByUserId = async (userId) => {
   const { rows } = await query(
     `SELECT r.*, 
+            u.id AS from_user_id,
             u.nickname AS from_user_nickname, 
             u.avatar_url AS from_user_avatar
      FROM ratings r
@@ -51,7 +65,7 @@ const findByUserId = async (userId) => {
      ORDER BY r.created_at DESC`,
     [userId]
   );
-  return rows;
+  return rows.map(normalizeRating);
 };
 
 module.exports = { create, findByUserId };

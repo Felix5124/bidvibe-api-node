@@ -3,6 +3,8 @@ const { generateTransferCode } = require('../../utils/transferCode');
 const { ErrorCode } = require('../../constants/errorCodes');
 const { TransactionType, TransactionStatus } = require('../../constants/enums');
 const { query, getClient } = require('../../config/database.config');
+const notifService = require('../notification/notification.service');
+const { NotificationType } = require('../../constants/enums');
 
 const getWallet = async (userId) => {
   const wallet = await repo.findByUserId(userId);
@@ -23,7 +25,7 @@ const createDeposit = async (userId, amount) => {
 
   const wallet = await repo.findByUserId(userId);
   const transferCode = generateTransferCode();
-  const expiredAt = new Date(Date.now() + 3 * 60 * 60 * 1000); // 3 giờ
+  const expiredAt = new Date(Date.now() + 3 * 60 * 60 * 1000);
 
   const tx = await repo.createTransaction({
     walletId: wallet.id,
@@ -62,16 +64,44 @@ const createWithdraw = async (userId, { amount, bankName, accountNumber, account
 
 const getTransactions = (userId, q) => repo.findTransactions(userId, q);
 
+const normalizeTransaction = (row) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    walletId: row.wallet_id,
+    userId: row.user_id,
+    userNickname: row.user_nickname || row.nickname,
+    type: row.type,
+    amount: parseFloat(row.amount),
+    status: row.status,
+    referenceId: row.reference_id,
+    description: row.description,
+    createdAt: row.created_at,
+  };
+};
+
+const getNormalizedTx = async (txId) => {
+  const { rows } = await query(
+    `SELECT t.*, u.id AS user_id, u.nickname AS user_nickname
+     FROM transactions t
+     JOIN wallets w ON w.id = t.wallet_id
+     JOIN users u ON u.id = w.user_id
+     WHERE t.id = $1`, [txId]
+  );
+  return normalizeTransaction(rows[0]);
+};
+
 const getPendingTransactions = async () => {
   const { rows } = await query(
-    `SELECT t.*, w.user_id, u.nickname, u.avatar_url, u.email
+    `SELECT t.*, u.id AS user_id, u.nickname AS user_nickname
      FROM transactions t
      JOIN wallets w ON w.id = t.wallet_id
      JOIN users u ON u.id = w.user_id
      WHERE t.status = 'PENDING'
-     ORDER BY t.created_at DESC`
+       AND t.type IN ('DEPOSIT', 'WITHDRAW')
+     ORDER BY t.created_at ASC`
   );
-  return rows;
+  return rows.map(normalizeTransaction);
 };
 
 const approveDeposit = async (txId) => {
@@ -92,13 +122,24 @@ const approveDeposit = async (txId) => {
       [tx[0].amount, tx[0].wallet_id]
     );
 
-    const { rows: updated } = await client.query(
-      "UPDATE transactions SET status = 'COMPLETED' WHERE id = $1 RETURNING *",
+    await client.query(
+      "UPDATE transactions SET status = 'COMPLETED' WHERE id = $1",
       [txId]
     );
 
     await client.query('COMMIT');
-    return updated[0];
+    
+    const result = await getNormalizedTx(txId);
+
+    await notifService.send(
+      result.userId,
+      NotificationType.FINANCE,
+      "Nạp tiền thành công",
+      `Yêu cầu nạp ${result.amount.toLocaleString('vi-VN')} VND đã được duyệt. Số dư khả dụng đã được cập nhật.`,
+      txId
+    );
+
+    return result;
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -116,11 +157,22 @@ const rejectDeposit = async (txId) => {
     throw { errorCode: ErrorCode.NOT_FOUND, status: 404, message: 'Giao dịch không tồn tại hoặc đã xử lý.' };
   }
 
-  const { rows: updated } = await query(
-    "UPDATE transactions SET status = 'REJECTED' WHERE id = $1 RETURNING *",
+  await query(
+    "UPDATE transactions SET status = 'REJECTED' WHERE id = $1",
     [txId]
   );
-  return updated[0];
+
+  const result = await getNormalizedTx(txId);
+
+  await notifService.send(
+    result.userId,
+    NotificationType.FINANCE,
+    "Yêu cầu nạp tiền bị từ chối",
+    `Yêu cầu nạp ${result.amount.toLocaleString('vi-VN')} VND đã bị từ chối. Vui lòng liên hệ hỗ trợ.`,
+    txId
+  );
+
+  return result;
 };
 
 const approveWithdraw = async (txId) => {
@@ -141,13 +193,24 @@ const approveWithdraw = async (txId) => {
       [tx[0].amount, tx[0].wallet_id]
     );
 
-    const { rows: updated } = await client.query(
-      "UPDATE transactions SET status = 'COMPLETED' WHERE id = $1 RETURNING *",
+    await client.query(
+      "UPDATE transactions SET status = 'COMPLETED' WHERE id = $1",
       [txId]
     );
 
     await client.query('COMMIT');
-    return updated[0];
+    
+    const result = await getNormalizedTx(txId);
+
+    await notifService.send(
+      result.userId,
+      NotificationType.FINANCE,
+      "Rút tiền thành công",
+      `Yêu cầu rút ${result.amount.toLocaleString('vi-VN')} VND đã được duyệt. Vui lòng kiểm tra tài khoản ngân hàng.`,
+      txId
+    );
+
+    return result;
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -174,13 +237,24 @@ const rejectWithdraw = async (txId) => {
       [tx[0].amount, tx[0].wallet_id]
     );
 
-    const { rows: updated } = await client.query(
-      "UPDATE transactions SET status = 'REJECTED' WHERE id = $1 RETURNING *",
+    await client.query(
+      "UPDATE transactions SET status = 'REJECTED' WHERE id = $1",
       [txId]
     );
 
     await client.query('COMMIT');
-    return updated[0];
+    
+    const result = await getNormalizedTx(txId);
+
+    await notifService.send(
+      result.userId,
+      NotificationType.FINANCE,
+      "Yêu cầu rút tiền bị từ chối",
+      `Yêu cầu rút ${result.amount.toLocaleString('vi-VN')} VND đã bị từ chối. Số tiền đã được hoàn lại vào số dư khả dụng.`,
+      txId
+    );
+
+    return result;
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -191,5 +265,6 @@ const rejectWithdraw = async (txId) => {
 
 module.exports = {
   getWallet, createDeposit, createWithdraw, getTransactions,
-  getPendingTransactions, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw
+  getPendingTransactions, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw,
+  normalizeTransaction
 };

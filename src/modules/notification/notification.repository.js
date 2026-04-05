@@ -1,6 +1,18 @@
 const { query } = require('../../config/database.config');
 const { pageResponse, parsePagination } = require('../../utils/pagination');
 
+const normalizeNotification = (row) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    content: row.content,
+    read: row.is_read,
+    createdAt: row.created_at,
+  };
+};
+
 const create = async ({ userId, type, title, content }) => {
   const { rows } = await query(
     `INSERT INTO notifications (id, user_id, type, title, content, is_read, created_at)
@@ -24,7 +36,8 @@ const findByUser = async (userId, q) => {
     'SELECT COUNT(*) FROM notifications WHERE user_id = $1',
     [userId]
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+  
+  return pageResponse(rows.map(normalizeNotification), cnt[0].count, page, size);
 };
 
 const markRead = async (id, userId) => {

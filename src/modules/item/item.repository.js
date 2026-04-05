@@ -1,15 +1,32 @@
 const { query } = require('../../config/database.config');
 const { pageResponse, parsePagination } = require('../../utils/pagination');
 
-const normalizeItem = (item) => {
-  if (!item) return null;
+const normalizeItem = (row) => {
+  if (!row) return null;
   return {
-    ...item,
-    imageUrls: item.image_urls,
-    sellerId: item.seller_id,
-    currentOwnerId: item.current_owner_id,
-    cooldownUntil: item.cooldown_until,
-    createdAt: item.created_at,
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    imageUrls: row.image_urls || [],
+    tags: row.tags || [],
+    rarity: row.rarity,
+    status: row.status,
+    cooldownUntil: row.cooldown_until,
+    createdAt: row.created_at,
+    
+    seller: row.seller_id ? {
+      id: row.seller_id,
+      nickname: row.seller_nickname,
+      avatarUrl: row.seller_avatar_url,
+      reputationScore: parseFloat(row.seller_reputation_score) || 5.0
+    } : null,
+    
+    currentOwner: row.owner_id || row.current_owner_id ? {
+      id: row.owner_id || row.current_owner_id,
+      nickname: row.owner_nickname,
+      avatarUrl: row.owner_avatar_url,
+      reputationScore: parseFloat(row.owner_reputation_score) || 5.0
+    } : null,
   };
 };
 
@@ -76,17 +93,29 @@ const findById = async (id) => {
 const findByOwner = async (userId, q) => {
   const { page, size } = parsePagination(q);
   const { rows } = await query(
-    `SELECT * FROM items
-     WHERE current_owner_id = $1
-     ORDER BY created_at DESC
+    `SELECT i.*,
+            s.id AS seller_id,
+            s.nickname AS seller_nickname,
+            s.avatar_url AS seller_avatar_url,
+            s.reputation_score AS seller_reputation_score,
+            o.id AS owner_id,
+            o.nickname AS owner_nickname,
+            o.avatar_url AS owner_avatar_url,
+            o.reputation_score AS owner_reputation_score
+     FROM items i
+     JOIN users s ON s.id = i.seller_id
+     JOIN users o ON o.id = i.current_owner_id
+     WHERE i.current_owner_id = $1
+     ORDER BY i.created_at DESC
      LIMIT $2 OFFSET $3`,
     [userId, size, page * size]
   );
+
   const { rows: cnt } = await query(
-    `SELECT COUNT(*) FROM items
-     WHERE current_owner_id = $1`,
+    `SELECT COUNT(*) FROM items WHERE current_owner_id = $1`,
     [userId]
   );
+
   return pageResponse(rows.map(normalizeItem), cnt[0].count, page, size);
 };
 

@@ -37,10 +37,23 @@ const update = async (id, { nickname, avatarUrl, phone, address }) => {
   return normalizeUser(rows[0]);
 };
 
+const normalizeRating = (row) => {
+  if (!row) return null;
+  const { from_nickname, from_avatar, ...rest } = row;
+  return {
+    ...rest,
+    fromUser: {
+      id: row.from_user_id,
+      nickname: from_nickname,
+      avatarUrl: from_avatar,
+    },
+  };
+};
+
 const findRatings = async (userId, q) => {
   const { page, size } = parsePagination(q);
   const { rows } = await query(
-    `SELECT r.*, u.nickname AS from_nickname, u.avatar_url AS from_avatar
+    `SELECT r.*, u.id AS from_user_id, u.nickname AS from_nickname, u.avatar_url AS from_avatar
      FROM ratings r
      JOIN users u ON u.id = r.from_user_id
      WHERE r.to_user_id = $1
@@ -52,7 +65,8 @@ const findRatings = async (userId, q) => {
     'SELECT COUNT(*) FROM ratings WHERE to_user_id = $1',
     [userId]
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+  const normalizedRows = rows.map(normalizeRating);
+  return pageResponse(normalizedRows, cnt[0].count, page, size);
 };
 
 const findWatchlist = async (userId, q) => {

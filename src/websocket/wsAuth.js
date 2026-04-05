@@ -12,7 +12,7 @@ const wsAuthMiddleware = async (socket, next) => {
     socket.data.userId = decoded.sub;
     socket.data.email  = decoded.email;
     next();
-  } catch {
+  } catch (err) {
     next(new Error('WS_TOKEN_INVALID'));
   }
 };

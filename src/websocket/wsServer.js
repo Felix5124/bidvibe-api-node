@@ -34,16 +34,13 @@ const initWs = (httpServer) => {
 
   io.on('connection', (socket) => {
     const userId = socket.data.userId;
-    console.log(`[WS] Connected: ${userId}`);
 
-    // Auto join personal room để nhận notification
     socket.join(`user:${userId}`);
 
     auctionChatHandler(io, socket);
     p2pChatHandler(io, socket);
 
     socket.on('disconnect', () => {
-      console.log(`[WS] Disconnected: ${userId}`);
     });
   });
 

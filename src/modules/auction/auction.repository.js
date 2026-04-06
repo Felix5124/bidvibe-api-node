@@ -1,6 +1,50 @@
 const { query, getClient } = require('../../config/database.config');
 const { pageResponse, parsePagination } = require('../../utils/pagination');
 
+// --- Helper: Chuẩn hóa DTO giống AuctionResponse.java ---
+const normalizeAuction = (row) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    startPrice: parseFloat(row.start_price),
+    currentPrice: parseFloat(row.current_price),
+    minPrice: row.min_price ? parseFloat(row.min_price) : null,
+    stepPrice: parseFloat(row.step_price),
+    decreaseAmount: row.decrease_amount ? parseFloat(row.decrease_amount) : null,
+    intervalSeconds: row.interval_seconds,
+    durationSeconds: row.duration_seconds,
+    extendSeconds: row.extend_seconds,
+    endTime: row.end_time,
+    orderIndex: row.order_index,
+    status: row.status,
+    
+    session: {
+      id: row.session_id,
+      title: row.session_title,
+      type: row.session_type,
+      status: row.session_status
+    },
+    item: {
+      id: row.item_id,
+      name: row.item_name,
+      description: row.item_description,
+      imageUrls: row.item_images || [],
+      tags: row.item_tags || [],
+      rarity: row.item_rarity,
+      seller: {
+        id: row.seller_id,
+        nickname: row.seller_nickname,
+        avatarUrl: row.seller_avatar
+      }
+    },
+    winner: row.winner_id ? {
+      id: row.winner_id,
+      nickname: row.winner_nickname,
+      avatarUrl: row.winner_avatar
+    } : null
+  };
+};
+
 // ── READ ───────────────────────────────────────────────────
 
 const findById = async (id) => {
@@ -13,24 +57,27 @@ const findById = async (id) => {
        i.description AS item_description,
        i.tags        AS item_tags,
        i.seller_id,
+       s.title       AS session_title,
        s.type        AS session_type,
-       w.nickname    AS winner_nickname
+       s.status      AS session_status,
+       u.nickname    AS seller_nickname,
+       u.avatar_url  AS seller_avatar,
+       w.nickname    AS winner_nickname,
+       w.avatar_url  AS winner_avatar
      FROM auctions a
      JOIN items i         ON i.id = a.item_id
+     JOIN users u         ON u.id = i.seller_id
      JOIN auction_sessions s ON s.id = a.session_id
      LEFT JOIN users w    ON w.id = a.winner_id
      WHERE a.id = $1`,
     [id]
   );
-  return rows[0];
+  return normalizeAuction(rows[0]);
 };
 
 const findBids = async (auctionId, q, isSealed = false) => {
-  // Sealed: chỉ trả kết quả khi ENDED
   if (isSealed) {
-    const { rows: auc } = await query(
-      'SELECT status FROM auctions WHERE id = $1', [auctionId]
-    );
+    const { rows: auc } = await query('SELECT status FROM auctions WHERE id = $1', [auctionId]);
     if (auc[0]?.status !== 'ENDED') {
       return { sealed: true, message: 'Kết quả sẽ được công bố khi phiên kết thúc.' };
     }
@@ -40,7 +87,7 @@ const findBids = async (auctionId, q, isSealed = false) => {
   const { rows } = await query(
     `SELECT
        b.id, b.amount, b.bid_time, b.is_proxy,
-       u.nickname, u.avatar_url
+       u.id AS user_id, u.nickname, u.avatar_url, u.reputation_score
      FROM bids b
      JOIN users u ON u.id = b.user_id
      WHERE b.auction_id = $1
@@ -48,10 +95,23 @@ const findBids = async (auctionId, q, isSealed = false) => {
      LIMIT $2 OFFSET $3`,
     [auctionId, size, page * size]
   );
-  const { rows: cnt } = await query(
-    'SELECT COUNT(*) FROM bids WHERE auction_id = $1', [auctionId]
-  );
-  return pageResponse(rows, cnt[0].count, page, size);
+  const { rows: cnt } = await query('SELECT COUNT(*) FROM bids WHERE auction_id = $1', [auctionId]);
+  
+  const mappedRows = rows.map(r => ({
+    id: r.id,
+    auctionId: auctionId,
+    amount: parseFloat(r.amount),
+    bidTime: r.bid_time,
+    proxy: r.is_proxy,
+    bidder: {
+      id: r.user_id,
+      nickname: r.nickname,
+      avatarUrl: r.avatar_url,
+      reputationScore: parseFloat(r.reputation_score)
+    }
+  }));
+
+  return pageResponse(mappedRows, cnt[0].count, page, size);
 };
 
 const findMessages = async (auctionId, q) => {
@@ -59,7 +119,7 @@ const findMessages = async (auctionId, q) => {
   const { rows } = await query(
     `SELECT
        m.id, m.content, m.created_at,
-       u.id AS sender_id, u.nickname, u.avatar_url
+       u.id AS sender_id, u.nickname, u.avatar_url, u.reputation_score
      FROM messages m
      JOIN users u ON u.id = m.sender_id
      WHERE m.auction_id = $1
@@ -70,7 +130,22 @@ const findMessages = async (auctionId, q) => {
   const { rows: cnt } = await query(
     'SELECT COUNT(*) FROM messages WHERE auction_id = $1', [auctionId]
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+
+  const mappedRows = rows.map(r => ({
+    id: r.id,
+    auctionId: auctionId,
+    content: r.content,
+    createdAt: r.created_at,
+    sender: {
+      id: r.sender_id,
+      nickname: r.nickname,
+      avatarUrl: r.avatar_url,
+      reputationScore: parseFloat(r.reputation_score) || 5.0
+    },
+    receiver: null
+  }));
+
+  return pageResponse(mappedRows, cnt[0].count, page, size);
 };
 
 // ── ENGLISH BID ────────────────────────────────────────────

@@ -28,12 +28,19 @@ const placeBid = async (auctionId, userId, amount) => {
 
   const { bid, auction, prevWinnerId } = await repo.placeBid({ auctionId, userId, amount });
 
-  // Broadcast cập nhật giá
+  const { rows: bidderInfo } = await query('SELECT nickname, avatar_url, reputation_score FROM users WHERE id = $1', [userId]);
+
   publishAuctionUpdate(auctionId, {
-    currentPrice:    auction.current_price,
-    winnerId:        auction.winner_id,
-    winnerNickname:  null,
-    endTime:         auction.end_time,
+    auctionId: auctionId,
+    currentPrice: parseFloat(auction.current_price),
+    status: auction.status,
+    endTime: auction.end_time,
+    currentLeader: {
+      id: userId,
+      nickname: bidderInfo[0].nickname,
+      avatarUrl: bidderInfo[0].avatar_url,
+      reputationScore: parseFloat(bidderInfo[0].reputation_score)
+    }
   });
 
   // Notify người bị vượt giá
@@ -42,24 +49,34 @@ const placeBid = async (auctionId, userId, amount) => {
       prevWinnerId,
       NotificationType.OUTBID,
       'Bạn bị vượt giá!',
-      `Có người vừa đặt ${parseFloat(amount).toLocaleString('vi-VN')}đ, vượt qua bạn.`
+      `Có người vừa đặt ${parseFloat(amount).toLocaleString('vi-VN')}đ, vượt qua bạn.`,
+      auctionId
     );
   }
 
   // Resolve proxy bids
   const proxyResult = await repo.resolveProxyBids(auctionId, amount, userId);
   if (proxyResult) {
+    const { rows: proxyBidderInfo } = await query('SELECT nickname, avatar_url, reputation_score FROM users WHERE id = $1', [proxyResult.auction.winner_id]);
     publishAuctionUpdate(auctionId, {
-      currentPrice: proxyResult.auction.current_price,
-      winnerId:     proxyResult.auction.winner_id,
-      endTime:      proxyResult.auction.end_time,
+      auctionId: auctionId,
+      currentPrice: parseFloat(proxyResult.auction.current_price),
+      status: proxyResult.auction.status,
+      endTime: proxyResult.auction.end_time,
+      currentLeader: proxyResult.auction.winner_id ? {
+        id: proxyResult.auction.winner_id,
+        nickname: proxyBidderInfo[0]?.nickname,
+        avatarUrl: proxyBidderInfo[0]?.avatar_url,
+        reputationScore: parseFloat(proxyBidderInfo[0]?.reputation_score)
+      } : null
     });
     // Notify người vừa bid bị proxy vượt
     await notifService.send(
       userId,
       NotificationType.OUTBID,
       'Bị vượt giá tự động!',
-      `Proxy bid tự động vừa vượt qua giá của bạn.`
+      `Proxy bid tự động vừa vượt qua giá của bạn.`,
+      auctionId
     );
   }
 
@@ -77,18 +94,54 @@ const cancelProxyBid = (auctionId, userId) =>
 
 const sendMessage = async (auctionId, userId, content) => {
   const { rows: u } = await query(
-    'SELECT is_muted FROM users WHERE id = $1', [userId]
+    'SELECT is_muted, nickname, avatar_url, reputation_score FROM users WHERE id = $1', [userId]
   );
   if (u[0]?.is_muted) {
     throw { errorCode: ErrorCode.USER_MUTED, status: 403, message: 'Bạn đang bị tắt chat.' };
   }
+  
   const { rows } = await query(
     `INSERT INTO messages (id, sender_id, auction_id, content, created_at)
      VALUES (gen_random_uuid(), $1, $2, $3, now())
-     RETURNING *`,
+     RETURNING id, created_at`,
     [userId, auctionId, content]
   );
-  return rows[0];
+
+  const messageId = rows[0].id;
+  const createdAt = rows[0].created_at;
+
+  const wsPayload = {
+    event: 'chat_message',
+    messageId: messageId,
+    senderId: userId,
+    senderNickname: u[0].nickname,
+    senderAvatarUrl: u[0].avatar_url,
+    receiverId: null,
+    auctionId: auctionId,
+    content: content,
+    timestamp: createdAt.toISOString()
+  };
+
+  try {
+    const { getIo } = require('../../websocket/wsServer');
+    getIo().to(`auction:${auctionId}`).emit('chat_message', wsPayload);
+  } catch (e) {
+    console.error('[WS Broadcast Error]', e.message);
+  }
+
+  return {
+    id: messageId,
+    auctionId: auctionId,
+    content: content,
+    createdAt: createdAt,
+    sender: {
+      id: userId,
+      nickname: u[0].nickname,
+      avatarUrl: u[0].avatar_url,
+      reputationScore: parseFloat(u[0].reputation_score) || 5.0
+    },
+    receiver: null
+  };
 };
 const buyDutch = async (auctionId, userId) => {
   const { rows: u } = await query('SELECT is_banned FROM users WHERE id = $1', [userId]);
@@ -110,7 +163,8 @@ const buyDutch = async (auctionId, userId) => {
     userId,
     NotificationType.AUCTION_WON,
     ' Bạn đã mua thành công!',
-    `Bạn vừa mua với giá ${parseFloat(auction.current_price).toLocaleString('vi-VN')}đ.`
+    `Bạn vừa mua với giá ${parseFloat(auction.current_price).toLocaleString('vi-VN')}đ.`,
+    auctionId
   );
 
   return auction;

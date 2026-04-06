@@ -3,6 +3,7 @@ const { authenticate } = require('../../middlewares/auth.middleware');
 const ctrl = require('./market.controller');
 
 router.get('/listings',              ctrl.getListings);
+router.get('/listings/me/active',    authenticate, ctrl.getMyActiveListings);
 router.get('/listings/:id',          ctrl.getListing);
 router.post('/listings',             authenticate, ctrl.createListing);
 router.delete('/listings/:id',       authenticate, ctrl.cancelListing);

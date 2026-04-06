@@ -22,10 +22,26 @@ const adminRoutes        = require('./modules/admin/admin.routes');
 
 const app = express();
 
+const configuredOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (configuredOrigins.includes(origin)) return true;
+
+  const isDev = (process.env.NODE_ENV || 'development') !== 'production';
+  return isDev && /^http:\/\/localhost:\d+$/.test(origin);
+};
+
 // ── Global Middleware ───────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin:      process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin:      (origin, callback) => {
+    if (isAllowedOrigin(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 }));
 app.use(morgan('dev'));

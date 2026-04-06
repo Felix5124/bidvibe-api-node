@@ -16,9 +16,21 @@ const countUnread = (userId) => repo.countUnread(userId);
 /**
  * Dùng chung toàn app — tạo notification DB + push WS
  */
-const send = async (userId, type, title, content) => {
+const send = async (userId, type, title, content, referenceId = null) => {
   const notif = await repo.create({ userId, type, title, content });
-  pushNotification(userId, notif);
+  
+  const payload = {
+    event: 'notification',
+    notificationId: notif.id,
+    userId: userId,
+    type: type,
+    title: title,
+    content: content,
+    createdAt: notif.created_at,
+    referenceId: referenceId
+  };
+
+  pushNotification(userId, payload);
   return notif;
 };
 

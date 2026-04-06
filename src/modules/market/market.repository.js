@@ -1,6 +1,34 @@
 const { query, getClient } = require('../../config/database.config');
 const { pageResponse, parsePagination } = require('../../utils/pagination');
 
+const normalizeMarketListing = (row) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    askingPrice: parseFloat(row.asking_price),
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    item: {
+      id: row.item_id,
+      name: row.item_name,
+      imageUrls: row.item_images || [],
+      rarity: row.item_rarity,
+      tags: row.item_tags || [],
+      description: row.item_description
+    },
+    seller: {
+      id: row.seller_id,
+      nickname: row.seller_nickname,
+      avatarUrl: row.seller_avatar,
+      reputationScore: parseFloat(row.seller_score) || 5.0
+    },
+    buyer: row.buyer_id ? {
+      id: row.buyer_id,
+    } : null
+  };
+};
+
 const findAll = async (q) => {
   const { page, size } = parsePagination(q);
   const conditions = ["ml.status = 'ACTIVE'"];
@@ -19,7 +47,6 @@ const findAll = async (q) => {
     conditions.push(`ml.asking_price <= $${params.length}`);
   }
   if (q.tags) {
-    // tags=sneaker,jordan → tìm item có ít nhất 1 tag khớp
     const tagArr = q.tags.split(',').map((t) => t.trim());
     params.push(JSON.stringify(tagArr));
     conditions.push(`i.tags ?| $${params.length}::text[]`);
@@ -35,7 +62,9 @@ const findAll = async (q) => {
        i.image_urls  AS item_images,
        i.rarity      AS item_rarity,
        i.tags        AS item_tags,
+       i.description AS item_description,
        u.nickname    AS seller_nickname,
+       u.avatar_url  AS seller_avatar,
        u.reputation_score AS seller_score
      FROM market_listings ml
      JOIN items i ON i.id = ml.item_id
@@ -54,7 +83,7 @@ const findAll = async (q) => {
     params
   );
 
-  return pageResponse(rows, cnt[0].count, page, size);
+  return pageResponse(rows.map(normalizeMarketListing), cnt[0].count, page, size);
 };
 
 const findById = async (id) => {
@@ -67,6 +96,7 @@ const findById = async (id) => {
        i.tags        AS item_tags,
        i.description AS item_description,
        u.nickname    AS seller_nickname,
+       u.avatar_url  AS seller_avatar,
        u.reputation_score AS seller_score
      FROM market_listings ml
      JOIN items i ON i.id = ml.item_id
@@ -74,7 +104,29 @@ const findById = async (id) => {
      WHERE ml.id = $1`,
     [id]
   );
-  return rows[0];
+  return normalizeMarketListing(rows[0]);
+};
+
+const findBySellerId = async (sellerId) => {
+  const { rows } = await query(
+    `SELECT
+       ml.*,
+       i.name        AS item_name,
+       i.image_urls  AS item_images,
+       i.rarity      AS item_rarity,
+       i.tags        AS item_tags,
+       i.description AS item_description,
+       u.nickname    AS seller_nickname,
+       u.avatar_url  AS seller_avatar,
+       u.reputation_score AS seller_score
+     FROM market_listings ml
+     JOIN items i ON i.id = ml.item_id
+     JOIN users u ON u.id = ml.seller_id
+     WHERE ml.seller_id = $1 AND ml.status = 'ACTIVE'
+     ORDER BY ml.created_at DESC`,
+    [sellerId]
+  );
+  return rows.map(normalizeMarketListing);
 };
 
 const create = async (sellerId, itemId, askingPrice) => {
@@ -205,7 +257,6 @@ const buy = async (listingId, buyerId) => {
 };
 
 const findMessages = async (listingId, requestingUserId) => {
-  // Chỉ buyer hoặc seller mới xem được
   const { rows: listing } = await query(
     'SELECT seller_id, buyer_id FROM market_listings WHERE id = $1',
     [listingId]
@@ -220,14 +271,27 @@ const findMessages = async (listingId, requestingUserId) => {
   const { rows } = await query(
     `SELECT m.*,
             u.nickname   AS sender_nickname,
-            u.avatar_url AS sender_avatar
+            u.avatar_url AS sender_avatar,
+            u.reputation_score AS sender_score
      FROM messages m
      JOIN users u ON u.id = m.sender_id
      WHERE m.market_listing_id = $1
      ORDER BY m.created_at ASC`,
     [listingId]
   );
-  return rows;
+  
+  return rows.map(r => ({
+    id: r.id,
+    content: r.content,
+    createdAt: r.created_at,
+    marketListingId: r.market_listing_id,
+    sender: {
+      id: r.sender_id,
+      nickname: r.sender_nickname,
+      avatarUrl: r.sender_avatar,
+      reputationScore: parseFloat(r.sender_score) || 5.0
+    }
+  }));
 };
 
 const createMessage = async (listingId, senderId, content) => {
@@ -253,6 +317,6 @@ const createMessage = async (listingId, senderId, content) => {
 };
 
 module.exports = {
-  findAll, findById, create, cancel, buy,
+  findAll, findById, findBySellerId, create, cancel, buy,
   findMessages, createMessage,
 };

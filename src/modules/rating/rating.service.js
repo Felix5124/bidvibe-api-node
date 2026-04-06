@@ -64,4 +64,6 @@ const createRating = async (fromUserId, { toUserId, auctionId, marketListingId, 
   return repo.create({ fromUserId, toUserId, auctionId, marketListingId, stars, comment });
 };
 
-module.exports = { createRating };
+const getUserRatings = (userId) => repo.findByUserId(userId);
+
+module.exports = { createRating, getUserRatings };

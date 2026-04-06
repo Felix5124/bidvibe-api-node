@@ -9,6 +9,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+const USER_PROJECTION = 'id, email, nickname, role, is_banned, is_muted';
+
 const authenticate = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   if (!authHeader?.startsWith('Bearer ')) {
@@ -28,15 +30,41 @@ const authenticate = async (req, res, next) => {
       email: data.user.email,
     };
 
-    // Auto create user + wallet nếu lần đầu login
-    const { rows } = await query(
-      `INSERT INTO users (id, email, nickname, reputation_score, role, is_banned, is_muted, created_at)
-       VALUES ($1, $2, $2, 5.0, 'USER', false, false, now())
-       ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
-       RETURNING id, email, nickname, role, is_banned, is_muted`,
-      [decoded.sub, decoded.email]
+    // Sync user profile từ Supabase Auth vào DB local.
+    let user;
+
+    const { rows: userByIdRows } = await query(
+      `SELECT ${USER_PROJECTION} FROM users WHERE id = $1`,
+      [decoded.sub]
     );
-    const user = rows[0];
+
+    if (userByIdRows[0]) {
+      const { rows } = await query(
+        `UPDATE users
+         SET email = $2
+         WHERE id = $1
+         RETURNING ${USER_PROJECTION}`,
+        [decoded.sub, decoded.email]
+      );
+      user = rows[0];
+    } else {
+      const { rows: userByEmailRows } = await query(
+        `SELECT ${USER_PROJECTION} FROM users WHERE email = $1`,
+        [decoded.email]
+      );
+
+      if (userByEmailRows[0]) {
+        user = userByEmailRows[0];
+      } else {
+        const { rows } = await query(
+          `INSERT INTO users (id, email, nickname, reputation_score, role, is_banned, is_muted, created_at)
+           VALUES ($1, $2, $2, 5.0, 'USER', false, false, now())
+           RETURNING ${USER_PROJECTION}`,
+          [decoded.sub, decoded.email]
+        );
+        user = rows[0];
+      }
+    }
 
     await query(
       `INSERT INTO wallets (id, user_id, balance_available, balance_locked, version)
@@ -52,7 +80,8 @@ const authenticate = async (req, res, next) => {
     req.user = user;
     next();
   } catch (err) {
-    return error(res, 'Token không hợp lệ hoặc đã hết hạn.', ErrorCode.UNAUTHORIZED, 401);
+    console.error('[Auth] authenticate error:', err);
+    return error(res, 'Không thể xác thực người dùng.', ErrorCode.INTERNAL_ERROR, 500);
   }
 };
 

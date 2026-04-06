@@ -1,6 +1,75 @@
 const { query, getClient } = require('../../config/database.config');
 const { pageResponse, parsePagination } = require('../../utils/pagination');
 
+// ── HELPERS ─────────────────────────────────────────────────
+
+const normalizeUser = (user) => {
+  if (!user) return null;
+  return {
+    ...user,
+    avatarUrl: user.avatar_url,
+    reputationScore: user.reputation_score,
+    isBanned: user.is_banned,
+    isMuted: user.is_muted,
+    bannedAt: user.banned_at,
+    createdAt: user.created_at,
+  };
+};
+
+const normalizeItem = (item) => {
+  if (!item) return null;
+  return {
+    ...item,
+    imageUrls: item.image_urls,
+    sellerId: item.seller_id,
+    currentOwnerId: item.current_owner_id,
+    cooldownUntil: item.cooldown_until,
+    createdAt: item.created_at,
+  };
+};
+
+const normalizeAuction = (row) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    startPrice: parseFloat(row.start_price),
+    currentPrice: parseFloat(row.current_price),
+    minPrice: row.min_price ? parseFloat(row.min_price) : null,
+    stepPrice: parseFloat(row.step_price),
+    decreaseAmount: row.decrease_amount ? parseFloat(row.decrease_amount) : null,
+    intervalSeconds: row.interval_seconds,
+    durationSeconds: row.duration_seconds,
+    extendSeconds: row.extend_seconds,
+    endTime: row.end_time,
+    orderIndex: row.order_index,
+    status: row.status,
+    session: {
+      id: row.session_id,
+      title: row.session_title,
+      type: row.session_type,
+      status: row.session_status
+    },
+    item: {
+      id: row.item_id,
+      name: row.item_name,
+      description: row.item_description,
+      imageUrls: row.item_images || [],
+      tags: row.item_tags || [],
+      rarity: row.item_rarity,
+      seller: {
+        id: row.seller_id,
+        nickname: row.seller_nickname,
+        avatarUrl: row.seller_avatar
+      }
+    },
+    winner: row.winner_id ? {
+      id: row.winner_id,
+      nickname: row.winner_nickname,
+      avatarUrl: row.winner_avatar
+    } : null
+  };
+};
+
 // ── ITEMS ──────────────────────────────────────────────────
 
 const getItems = async (q) => {
@@ -27,7 +96,7 @@ const getItems = async (q) => {
     `SELECT COUNT(*) FROM items i ${where}`,
     params
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+  return pageResponse(rows.map(normalizeItem), cnt[0].count, page, size);
 };
 
 const approveItem = async (itemId, { tags, rarity, startPrice }) => {
@@ -54,33 +123,89 @@ const rejectItem = async (itemId, reason) => {
 
 // ── SESSIONS ───────────────────────────────────────────────
 
-const createAuction = async (sessionId, {
-  itemId, startPrice, stepPrice,
-  durationSeconds, extendSeconds, orderIndex,
-  decreaseAmount, intervalSeconds, minPrice,
-}) => {
-  const { rows } = await query(
-    `INSERT INTO auctions
-       (id, session_id, item_id, start_price, current_price,
-        step_price, duration_seconds, extend_seconds, order_index,
-        status, decrease_amount, interval_seconds, min_price, created_at)
-     VALUES
-       (gen_random_uuid(), $1, $2, $3, $3,
-        $4, $5, $6, $7,
-        'WAITING', $8, $9, $10, now())
-     RETURNING *`,
-    [sessionId, itemId, startPrice,
-     stepPrice || 0, durationSeconds || 120, extendSeconds || 30, orderIndex || 0,
-     decreaseAmount, intervalSeconds, minPrice]
-  );
+const createAuction = async (sessionId, payload) => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
 
-  // Cập nhật item status → IN_AUCTION
-  await query(
-    `UPDATE items SET status = 'IN_AUCTION' WHERE id = $1`,
-    [itemId]
-  );
+    const {
+      itemId, startPrice, stepPrice,
+      orderIndex, decreaseAmount, minPrice, rarity, endTime
+    } = payload;
 
-  return rows[0];
+    const safeStepPrice = stepPrice !== undefined ? stepPrice : 0;
+    const safeOrderIndex = orderIndex !== undefined ? orderIndex : 0;
+    const safeDecreaseAmount = decreaseAmount !== undefined ? decreaseAmount : null;
+    const safeMinPrice = minPrice !== undefined ? minPrice : null;
+    const safeEndTime = endTime || null;
+
+    const { rows } = await client.query(
+      `INSERT INTO auctions
+         (id, session_id, item_id, start_price, current_price,
+          step_price, duration_seconds, extend_seconds, order_index,
+          status, decrease_amount, interval_seconds, min_price, end_time)
+       VALUES
+         (gen_random_uuid(), $1, $2, $3, $3,
+          $4, 120, 30, $5,
+          'WAITING', $6, 5, $7, $8)
+       RETURNING id`,
+      [
+        sessionId,
+        itemId,
+        startPrice,
+        safeStepPrice,
+        safeOrderIndex,
+        safeDecreaseAmount,
+        safeMinPrice,
+        safeEndTime
+      ]
+    );
+
+    const newAuctionId = rows[0].id;
+
+    await client.query(
+      `UPDATE items 
+       SET status = 'IN_AUCTION', rarity = COALESCE($2, rarity) 
+       WHERE id = $1`,
+      [itemId, rarity || null]
+    );
+
+    await client.query('COMMIT');
+
+    const { rows: fullAuction } = await query(
+      `SELECT
+         a.*,
+         i.name        AS item_name,
+         i.image_urls  AS item_images,
+         i.rarity      AS item_rarity,
+         i.description AS item_description,
+         i.tags        AS item_tags,
+         i.seller_id,
+         s.title       AS session_title,
+         s.type        AS session_type,
+         s.status      AS session_status,
+         u.nickname    AS seller_nickname,
+         u.avatar_url  AS seller_avatar,
+         w.nickname    AS winner_nickname,
+         w.avatar_url  AS winner_avatar
+       FROM auctions a
+       JOIN items i         ON i.id = a.item_id
+       JOIN users u         ON u.id = i.seller_id
+       JOIN auction_sessions s ON s.id = a.session_id
+       LEFT JOIN users w    ON w.id = a.winner_id
+       WHERE a.id = $1`,
+      [newAuctionId]
+    );
+
+    return normalizeAuction(fullAuction[0]);
+
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('[createAuction] Lỗi khi thêm vật phẩm vào phiên:', e);
+    throw e;
+  } finally {
+    client.release();
+  }
 };
 
 const removeAuction = async (auctionId) => {
@@ -345,7 +470,7 @@ const getUsers = async (q) => {
   const { rows: cnt } = await query(
     `SELECT COUNT(*) FROM users ${where}`, params
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+  return pageResponse(rows.map(normalizeUser), cnt[0].count, page, size);
 };
 
 const getUserDetail = async (id) => {
@@ -381,20 +506,36 @@ const getUserDetail = async (id) => {
     [id]
   );
 
-  return { ...u[0], bidHistory: bids, transactionHistory: transactions, ownedItems: items };
+  return {
+    ...normalizeUser(u[0]),
+    bidHistory: bids,
+    transactionHistory: transactions,
+    ownedItems: items.map(normalizeItem),
+  };
 };
 
 const updateUserField = async (id, fields) => {
   const keys = Object.keys(fields);
+  if (keys.length === 0) return null;
+  
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-  const { rows } = await query(
-    `UPDATE users SET ${sets} WHERE id = $1 RETURNING *`,
-    [id, ...Object.values(fields)]
-  );
-  return rows[0];
+  const values = Object.values(fields);
+  
+  try {
+    const { rows } = await query(
+      `UPDATE users SET ${sets} WHERE id = $1 RETURNING *`,
+      [id, ...values]
+    );
+    return normalizeUser(rows[0]);
+  } catch (err) {
+    console.error('[updateUserField] Error:', err.message, { id, fields, sets, values });
+    throw err;
+  }
 };
 
 // ── FINANCE ────────────────────────────────────────────────
+
+const { normalizeTransaction } = require('../wallet/wallet.service');
 
 const getTransactions = async (q) => {
   const { page, size } = parsePagination(q);
@@ -413,7 +554,7 @@ const getTransactions = async (q) => {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const { rows } = await query(
-    `SELECT t.*, u.nickname, u.email
+    `SELECT t.*, u.id AS user_id, u.nickname AS user_nickname
      FROM transactions t
      JOIN wallets w ON w.id = t.wallet_id
      JOIN users u   ON u.id = w.user_id
@@ -425,7 +566,8 @@ const getTransactions = async (q) => {
   const { rows: cnt } = await query(
     `SELECT COUNT(*) FROM transactions t ${where}`, params
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+
+  return pageResponse(rows.map(normalizeTransaction), cnt[0].count, page, size);
 };
 
 const approveTransaction = async (txId) => {
@@ -546,13 +688,22 @@ const getOverview = async () => {
     WHERE type = 'PLATFORM_FEE' AND status = 'COMPLETED'
   `);
 
+  const { rows: pendingTx } = await query(`
+    SELECT
+      COUNT(*) FILTER (WHERE type = 'DEPOSIT'  AND status = 'PENDING') AS pending_deposits,
+      COUNT(*) FILTER (WHERE type = 'WITHDRAW' AND status = 'PENDING') AS pending_withdrawals
+    FROM transactions
+  `);
+
   return {
     totalUsers:             parseInt(users[0].total_users),
     activeUsersLast7Days:   parseInt(users[0].active_users_last7),
-    totalItemsPending:      parseInt(items[0].pending),
+    totalItems:             parseInt(items[0].pending),
     activeSessions:         parseInt(sessions[0].active_sessions),
     completedSessions:      parseInt(sessions[0].completed_sessions),
-    totalRevenuePlatformFee: parseFloat(revenue[0].total),
+    totalRevenue:           parseFloat(revenue[0].total),
+    pendingDeposits:        parseInt(pendingTx[0].pending_deposits),
+    pendingWithdrawals:     parseInt(pendingTx[0].pending_withdrawals),
   };
 };
 
@@ -572,9 +723,9 @@ const getRevenue = async (q) => {
 
   const { rows } = await query(
     `SELECT
-       ${groupBy}      AS period,
+       ${groupBy}      AS date,
        SUM(amount)     AS revenue,
-       COUNT(*)        AS total_transactions
+       COUNT(*)        AS transaction_count
      FROM transactions
      ${where}
      GROUP BY 1
@@ -582,41 +733,89 @@ const getRevenue = async (q) => {
     params
   );
 
-  return rows;
+  const totalRevenue = rows.reduce((sum, row) => sum + parseFloat(row.revenue || 0), 0);
+
+  const dailyRevenue = rows.map(row => ({
+    date: row.date,
+    revenue: parseFloat(row.revenue),
+    transactionCount: parseInt(row.transaction_count)
+  }));
+
+  return {
+    totalRevenue,
+    dailyRevenue
+  };
 };
 
 const getAuctionStats = async () => {
   const { rows } = await query(`
     SELECT
-      COUNT(*)                                                       AS total_auctions,
-      COUNT(*) FILTER (WHERE winner_id IS NOT NULL)                  AS auctions_with_winner,
-      COUNT(*) FILTER (WHERE winner_id IS NULL AND status = 'ENDED') AS auctions_no_bid,
-      COALESCE(AVG(current_price) FILTER (WHERE winner_id IS NOT NULL), 0) AS avg_winning_price
+      COUNT(*)                                                       AS totalAuctions,
+      COUNT(*) FILTER (WHERE status = 'ENDED')                      AS endedAuctions,
+      COUNT(*) FILTER (WHERE status = 'CANCELLED')                  AS cancelledAuctions,
+      COUNT(*) FILTER (WHERE status = 'ACTIVE')                     AS activeAuctions
     FROM auctions
-    WHERE status = 'ENDED'
   `);
 
   const { rows: bidStats } = await query(`
     SELECT
-      COUNT(*)      AS total_bids,
-      AVG(amount)   AS avg_bid_amount
+      COUNT(*)      AS totalBids
     FROM bids
   `);
 
-  return { ...rows[0], ...bidStats[0] };
+  const { rows: finalPayments } = await query(`
+    SELECT
+      COALESCE(SUM(amount), 0) AS totalVolume,
+      COUNT(*)                  AS count
+    FROM transactions
+    WHERE type = 'FINAL_PAYMENT' AND status = 'COMPLETED'
+  `);
+
+  const totalVolume = parseFloat(finalPayments[0].totalvolume) || 0;
+  const count = parseInt(finalPayments[0].count) || 0;
+  const avgWinningPrice = count > 0 ? totalVolume / count : 0;
+
+  return {
+    totalAuctions: parseInt(rows[0].totalauctions) || 0,
+    endedAuctions: parseInt(rows[0].endedauctions) || 0,
+    cancelledAuctions: parseInt(rows[0].cancelledauctions) || 0,
+    activeAuctions: parseInt(rows[0].activeauctions) || 0,
+    totalBids: parseInt(bidStats[0].totalbids) || 0,
+    avgWinningPrice: avgWinningPrice,
+    totalVolume: totalVolume,
+  };
 };
 
 const getMarketStats = async () => {
   const { rows } = await query(`
     SELECT
-      COUNT(*) FILTER (WHERE status = 'SOLD')   AS total_sold,
-      COUNT(*) FILTER (WHERE status = 'ACTIVE') AS active_listings,
-      COALESCE(AVG(asking_price) FILTER (WHERE status = 'SOLD'), 0) AS avg_sold_price,
-      COALESCE(SUM(asking_price) FILTER (WHERE status = 'SOLD'), 0) AS total_volume
+      COUNT(*)                                               AS totalListings,
+      COUNT(*) FILTER (WHERE status = 'SOLD')              AS soldListings,
+      COUNT(*) FILTER (WHERE status = 'CANCELLED')          AS cancelledListings,
+      COUNT(*) FILTER (WHERE status = 'ACTIVE')            AS activeListings
     FROM market_listings
   `);
 
-  return rows[0];
+  const { rows: soldStats } = await query(`
+    SELECT
+      COALESCE(SUM(asking_price), 0) AS totalVolume,
+      COUNT(*)                        AS count
+    FROM market_listings
+    WHERE status = 'SOLD'
+  `);
+
+  const totalVolume = parseFloat(soldStats[0].totalvolume) || 0;
+  const count = parseInt(soldStats[0].count) || 0;
+  const avgSalePrice = count > 0 ? totalVolume / count : 0;
+
+  return {
+    totalListings: parseInt(rows[0].totallistings) || 0,
+    soldListings: parseInt(rows[0].soldlistings) || 0,
+    cancelledListings: parseInt(rows[0].cancelledlistings) || 0,
+    activeListings: parseInt(rows[0].activelistings) || 0,
+    avgSalePrice: avgSalePrice,
+    totalVolume: totalVolume,
+  };
 };
 
 module.exports = {

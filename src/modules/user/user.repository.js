@@ -1,9 +1,20 @@
 const { query } = require('../../config/database.config');
 const { pageResponse, parsePagination } = require('../../utils/pagination');
 
+const normalizeUser = (user) => {
+  if (!user) return null;
+  return {
+    ...user,
+    reputationScore: user.reputation_score,
+    avatarUrl: user.avatar_url,
+    createdAt: user.created_at,
+    bannedAt: user.banned_at,
+  };
+};
+
 const findById = async (id) => {
   const { rows } = await query('SELECT * FROM users WHERE id = $1', [id]);
-  return rows[0];
+  return normalizeUser(rows[0]);
 };
 
 const findPublicById = async (id) => {
@@ -12,7 +23,7 @@ const findPublicById = async (id) => {
      FROM users WHERE id = $1`,
     [id]
   );
-  return rows[0];
+  return normalizeUser(rows[0]);
 };
 
 const update = async (id, { nickname, avatarUrl, phone, address }) => {
@@ -23,13 +34,26 @@ const update = async (id, { nickname, avatarUrl, phone, address }) => {
      RETURNING *`,
     [id, nickname, avatarUrl, phone, address]
   );
-  return rows[0];
+  return normalizeUser(rows[0]);
+};
+
+const normalizeRating = (row) => {
+  if (!row) return null;
+  const { from_nickname, from_avatar, ...rest } = row;
+  return {
+    ...rest,
+    fromUser: {
+      id: row.from_user_id,
+      nickname: from_nickname,
+      avatarUrl: from_avatar,
+    },
+  };
 };
 
 const findRatings = async (userId, q) => {
   const { page, size } = parsePagination(q);
   const { rows } = await query(
-    `SELECT r.*, u.nickname AS from_nickname, u.avatar_url AS from_avatar
+    `SELECT r.*, u.id AS from_user_id, u.nickname AS from_nickname, u.avatar_url AS from_avatar
      FROM ratings r
      JOIN users u ON u.id = r.from_user_id
      WHERE r.to_user_id = $1
@@ -41,7 +65,8 @@ const findRatings = async (userId, q) => {
     'SELECT COUNT(*) FROM ratings WHERE to_user_id = $1',
     [userId]
   );
-  return pageResponse(rows, cnt[0].count, page, size);
+  const normalizedRows = rows.map(normalizeRating);
+  return pageResponse(normalizedRows, cnt[0].count, page, size);
 };
 
 const findWatchlist = async (userId, q) => {

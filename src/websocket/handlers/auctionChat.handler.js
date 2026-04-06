@@ -25,19 +25,29 @@ module.exports = (io, socket) => {
         return socket.emit('error', { message: 'Bạn đang bị tắt chat.' });
       }
 
-      await query(
+      // 2. Lưu vào database
+      const { rows: msg } = await query(
         `INSERT INTO messages (id, sender_id, auction_id, content, created_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, now())`,
+         VALUES (gen_random_uuid(), $1, $2, $3, now()) RETURNING id, created_at`,
         [userId, auctionId, content]
       );
 
-      io.to(WsEvents.ROOM_AUCTION(auctionId)).emit(WsEvents.CHAT_MESSAGE, {
-        senderId:  userId,
-        nickname:  u[0]?.nickname,
-        avatarUrl: u[0]?.avatar_url,
-        content,
-        createdAt: new Date(),
-      });
+      // 3. Broadcast cho cả phòng (Chuẩn hóa key giống ChatMessagePayload.java)
+      const wsPayload = {
+        event: 'chat_message',
+        messageId: msg[0].id,
+        senderId: userId,
+        senderNickname: u[0]?.nickname,
+        senderAvatarUrl: u[0]?.avatar_url,
+        receiverId: null,
+        auctionId: auctionId,
+        content: content,
+        timestamp: msg[0].created_at.toISOString()
+      };
+
+      const room = WsEvents.ROOM_AUCTION(auctionId);
+      
+      io.to(room).emit(WsEvents.CHAT_MESSAGE, wsPayload);
     } catch (err) {
       console.error('[WS] auction:chat error:', err.message);
     }

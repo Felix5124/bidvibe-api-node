@@ -1,10 +1,11 @@
-const repo = require('./admin.repository');
-const itemRepo = require('../item/item.repository');
-const sessionRepo = require('../session/session.repository');
-const notifService = require('../notification/notification.service');
+const repo           = require('./admin.repository');
+const itemRepo       = require('../item/item.repository');
+const sessionRepo    = require('../session/session.repository');
+const notifService   = require('../notification/notification.service');
 const { NotificationType } = require('../../constants/enums');
-const { ErrorCode } = require('../../constants/errorCodes');
+const { ErrorCode }  = require('../../constants/errorCodes');
 const { publishAuctionUpdate } = require('../../websocket/publishers/auctionPublisher');
+const { query }      = require('../../config/database.config');
 
 // ── ITEMS ──────────────────────────────────────────────────
 
@@ -37,6 +38,21 @@ const rejectItem = async (itemId, reason) => {
 
 // ── SESSIONS ───────────────────────────────────────────────
 
+const getSessions = (q) => sessionRepo.findAll(q);
+
+const getSession = async (id) => {
+  const session = await sessionRepo.findById(id);
+  if (!session) {
+    throw { errorCode: ErrorCode.NOT_FOUND, status: 404, message: 'Phiên đấu giá không tồn tại.' };
+  }
+  return session;
+};
+
+const getSessionAuctions = async (sessionId) => {
+  await getSession(sessionId);
+  return sessionRepo.findAuctions(sessionId);
+};
+
 const createSession = (body) => sessionRepo.create(body);
 
 const addAuction = (sessionId, body) => repo.createAuction(sessionId, body);
@@ -55,7 +71,7 @@ const resetTimer = async (auctionId) => {
   const result = await repo.resetTimer(auctionId);
   publishAuctionUpdate(auctionId, {
     currentPrice: result.current_price,
-    endTime: result.end_time,
+    endTime:      result.end_time,
   });
   return result;
 };
@@ -64,30 +80,52 @@ const deleteBid = async (bidId) => {
   const result = await repo.deleteBid(bidId);
   publishAuctionUpdate(result.auctionId, {
     currentPrice: result.newPrice,
-    winnerId: result.newWinnerId,
+    winnerId:     result.newWinnerId,
   });
   return result;
 };
 // ── USERS ──────────────────────────────────────────────────
 
-const getUsers = (q) => repo.getUsers(q);
-const getUser = (id) => repo.getUserDetail(id);
-const updateRole = (id, role) => repo.updateUserField(id, { role });
-const muteUser = (id) => repo.updateUserField(id, { is_muted: true });
+const getUsers     = (q) => repo.getUsers(q);
+const getUser      = (id) => repo.getUserDetail(id);
+const updateRole   = (id, role) => repo.updateUserField(id, { role });
+const muteUser   = async (id) => {
+  const updated = await repo.updateUserField(id, { is_muted: true });
+  try {
+    await notifService.send(
+      id,
+      NotificationType.MODERATION,
+      'Tài khoản bị tắt chat',
+      'Quản trị viên đã tắt chat của bạn.'
+    );
+  } catch (e) {
+    console.error('[AdminService] Failed to send mute notification:', e.message);
+  }
+  return updated;
+};
 const unmuteUser = (id) => repo.updateUserField(id, { is_muted: false });
 
 const banUser = async (id, reason) => {
-  const updated = await repo.updateUserField(id, {
-    is_banned: true,
-    banned_at: new Date().toISOString(),
-  });
-  await notifService.send(
-    id,
-    NotificationType.MODERATION,
-    'Tài khoản bị khóa',
-    `Tài khoản của bạn đã bị khóa. Lý do: ${reason || 'Vi phạm điều khoản.'}`
-  );
-  return updated;
+  try {
+    const updated = await repo.updateUserField(id, {
+      is_banned: true,
+      banned_at: new Date().toISOString(),
+    });
+    try {
+      await notifService.send(
+        id,
+        NotificationType.MODERATION,
+        'Tài khoản bị khóa',
+        `Tài khoản của bạn đã bị khóa. Lý do: ${reason || 'Vi phạm điều khoản.'}`
+      );
+    } catch (e) {
+      console.error('[AdminService] Failed to send ban notification:', e.message);
+    }
+    return updated;
+  } catch (err) {
+    console.error('[banUser] Error:', err);
+    throw err;
+  }
 };
 
 const unbanUser = (id) =>
@@ -117,7 +155,16 @@ const kickUser = async (userId, auctionId) => {
 
 // ── FINANCE ────────────────────────────────────────────────
 
+const walletService = require('../wallet/wallet.service');
+
 const getAdminTransactions = (q) => repo.getTransactions(q);
+
+const getPendingTransactions = () => walletService.getPendingTransactions();
+
+const approveDeposit = (txId) => walletService.approveDeposit(txId);
+const rejectDeposit = (txId) => walletService.rejectDeposit(txId);
+const approveWithdraw = (txId) => walletService.approveWithdraw(txId);
+const rejectWithdraw = (txId) => walletService.rejectWithdraw(txId);
 
 const approveTransaction = async (txId) => {
   const tx = await repo.approveTransaction(txId);
@@ -157,40 +204,22 @@ const rejectTransaction = async (txId) => {
 const getP2pMessages = (listingId) => repo.getP2pMessages(listingId);
 // ── ANALYTICS ─────────────────────────────────────────────
 
-const getOverview = () => repo.getOverview();
-const getRevenue = (q) => repo.getRevenue(q);
-const getAuctionStats = () => repo.getAuctionStats();
-const getMarketStats = () => repo.getMarketStats();
-
-const shipItem = async (itemId) => {
-  const item = await itemRepo.findById(itemId);
-  if (!item) throw { errorCode: 'NOT_FOUND', status: 404 };
-  if (item.status !== 'SHIPPING_REQUESTED') {
-    throw { errorCode: 'VALIDATION_ERROR', status: 400, message: 'Item chưa yêu cầu giao hàng.' };
-  }
-
-  const updated = await itemRepo.updateStatus(itemId, 'SHIPPING');
-
-  // Notify người dùng
-  await notifService.send(
-    item.current_owner_id,
-    NotificationType.FINANCE,
-    'Vật phẩm đang được giao',
-    `Vật phẩm "${item.name}" đang trên đường giao đến bạn.`
-  );
-
-  return updated;
-};
+const getOverview     = ()  => repo.getOverview();
+const getRevenue      = (q) => repo.getRevenue(q);
+const getAuctionStats = ()  => repo.getAuctionStats();
+const getMarketStats  = ()  => repo.getMarketStats();
 
 module.exports = {
   getItems, getItem, approveItem, rejectItem,
+  getSessions, getSession, getSessionAuctions,
   createSession, addAuction, removeAuction,
   startSession, pauseSession, resumeSession, stopSession,
   resetTimer, deleteBid,
   getUsers, getUser, updateRole,
   muteUser, unmuteUser, banUser, unbanUser, kickUser,
-  getAdminTransactions, approveTransaction, rejectTransaction,
+  getAdminTransactions, getPendingTransactions,
+  approveTransaction, rejectTransaction,
+  approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw,
   getP2pMessages,
   getOverview, getRevenue, getAuctionStats, getMarketStats,
-  shipItem,
 };

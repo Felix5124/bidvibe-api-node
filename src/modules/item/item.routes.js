@@ -7,5 +7,8 @@ router.get('/me/inventory', authenticate, ctrl.getInventory);
 router.post('/', authenticate, ctrl.createItem);
 router.get('/:id', ctrl.getItem);
 router.patch('/:id/confirm-receipt', authenticate, ctrl.confirmReceipt);
+router.patch('/:id/request-shipping', authenticate, ctrl.requestShipping);
+router.patch('/:id/confirm-receipt', authenticate, ctrl.confirmReceipt);
+
 
 module.exports = router;

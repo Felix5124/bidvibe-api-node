@@ -1,9 +1,9 @@
-const repo           = require('./admin.repository');
-const itemRepo       = require('../item/item.repository');
-const sessionRepo    = require('../session/session.repository');
-const notifService   = require('../notification/notification.service');
+const repo = require('./admin.repository');
+const itemRepo = require('../item/item.repository');
+const sessionRepo = require('../session/session.repository');
+const notifService = require('../notification/notification.service');
 const { NotificationType } = require('../../constants/enums');
-const { ErrorCode }  = require('../../constants/errorCodes');
+const { ErrorCode } = require('../../constants/errorCodes');
 const { publishAuctionUpdate } = require('../../websocket/publishers/auctionPublisher');
 
 // ── ITEMS ──────────────────────────────────────────────────
@@ -55,7 +55,7 @@ const resetTimer = async (auctionId) => {
   const result = await repo.resetTimer(auctionId);
   publishAuctionUpdate(auctionId, {
     currentPrice: result.current_price,
-    endTime:      result.end_time,
+    endTime: result.end_time,
   });
   return result;
 };
@@ -64,17 +64,17 @@ const deleteBid = async (bidId) => {
   const result = await repo.deleteBid(bidId);
   publishAuctionUpdate(result.auctionId, {
     currentPrice: result.newPrice,
-    winnerId:     result.newWinnerId,
+    winnerId: result.newWinnerId,
   });
   return result;
 };
 // ── USERS ──────────────────────────────────────────────────
 
-const getUsers     = (q) => repo.getUsers(q);
-const getUser      = (id) => repo.getUserDetail(id);
-const updateRole   = (id, role) => repo.updateUserField(id, { role });
-const muteUser     = (id) => repo.updateUserField(id, { is_muted: true });
-const unmuteUser   = (id) => repo.updateUserField(id, { is_muted: false });
+const getUsers = (q) => repo.getUsers(q);
+const getUser = (id) => repo.getUserDetail(id);
+const updateRole = (id, role) => repo.updateUserField(id, { role });
+const muteUser = (id) => repo.updateUserField(id, { is_muted: true });
+const unmuteUser = (id) => repo.updateUserField(id, { is_muted: false });
 
 const banUser = async (id, reason) => {
   const updated = await repo.updateUserField(id, {
@@ -157,10 +157,30 @@ const rejectTransaction = async (txId) => {
 const getP2pMessages = (listingId) => repo.getP2pMessages(listingId);
 // ── ANALYTICS ─────────────────────────────────────────────
 
-const getOverview     = ()  => repo.getOverview();
-const getRevenue      = (q) => repo.getRevenue(q);
-const getAuctionStats = ()  => repo.getAuctionStats();
-const getMarketStats  = ()  => repo.getMarketStats();
+const getOverview = () => repo.getOverview();
+const getRevenue = (q) => repo.getRevenue(q);
+const getAuctionStats = () => repo.getAuctionStats();
+const getMarketStats = () => repo.getMarketStats();
+
+const shipItem = async (itemId) => {
+  const item = await itemRepo.findById(itemId);
+  if (!item) throw { errorCode: 'NOT_FOUND', status: 404 };
+  if (item.status !== 'SHIPPING_REQUESTED') {
+    throw { errorCode: 'VALIDATION_ERROR', status: 400, message: 'Item chưa yêu cầu giao hàng.' };
+  }
+
+  const updated = await itemRepo.updateStatus(itemId, 'SHIPPING');
+
+  // Notify người dùng
+  await notifService.send(
+    item.current_owner_id,
+    NotificationType.FINANCE,
+    'Vật phẩm đang được giao',
+    `Vật phẩm "${item.name}" đang trên đường giao đến bạn.`
+  );
+
+  return updated;
+};
 
 module.exports = {
   getItems, getItem, approveItem, rejectItem,
@@ -172,4 +192,5 @@ module.exports = {
   getAdminTransactions, approveTransaction, rejectTransaction,
   getP2pMessages,
   getOverview, getRevenue, getAuctionStats, getMarketStats,
+  shipItem,
 };

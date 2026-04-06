@@ -4,14 +4,14 @@ const { ItemStatus } = require('../../constants/enums');
 
 const createItem = (userId, body) =>
   repo.create({
-    name:           body.name,
-    description:    body.description,
-    imageUrls:      body.imageUrls || [],
-    tags:           body.tags || [],
-    rarity:         body.rarity || 'COMMON',
-    sellerId:       userId,
+    name: body.name,
+    description: body.description,
+    imageUrls: body.imageUrls || [],
+    tags: body.tags || [],
+    rarity: body.rarity || 'COMMON',
+    sellerId: userId,
     currentOwnerId: userId,
-    status:         ItemStatus.PENDING,
+    status: ItemStatus.PENDING,
   });
 
 const getItem = async (id) => {
@@ -35,5 +35,20 @@ const confirmReceipt = async (itemId, userId) => {
   }
   return repo.updateStatus(itemId, ItemStatus.SHIPPED);
 };
+const requestShipping = async (itemId, userId) => {
+  const item = await repo.findById(itemId);
+  if (!item) {
+    throw { errorCode: ErrorCode.NOT_FOUND, status: 404, message: 'Vật phẩm không tồn tại.' };
+  }
+  if (item.current_owner_id !== userId) {
+    throw { errorCode: ErrorCode.FORBIDDEN, status: 403, message: 'Bạn không phải chủ sở hữu.' };
+  }
+  if (item.status !== ItemStatus.IN_INVENTORY) {
+    throw { errorCode: ErrorCode.VALIDATION_ERROR, status: 400, message: 'Vật phẩm phải ở trạng thái trong kho.' };
+  }
+  return repo.updateStatus(itemId, 'SHIPPING_REQUESTED');
+};
 
-module.exports = { createItem, getItem, getInventory, confirmReceipt };
+
+
+module.exports = { createItem, getItem, getInventory, confirmReceipt, requestShipping };

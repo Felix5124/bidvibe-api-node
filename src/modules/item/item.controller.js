@@ -21,4 +21,9 @@ const confirmReceipt = async (req, res, next) => {
   catch (e) { next(e); }
 };
 
-module.exports = { createItem, getItem, getInventory, confirmReceipt };
+const requestShipping = async (req, res, next) => {
+  try { ok(res, await service.requestShipping(req.params.id, req.user.id)); }
+  catch (e) { next(e); }
+};
+
+module.exports = { createItem, getItem, getInventory, confirmReceipt, requestShipping };

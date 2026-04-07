@@ -1,5 +1,5 @@
-const { query, getClient } = require('../../config/database.config');
-const { pageResponse, parsePagination } = require('../../utils/pagination');
+const { query, getClient } = require("../../config/database.config");
+const { pageResponse, parsePagination } = require("../../utils/pagination");
 
 const normalizeMarketListing = (row) => {
   if (!row) return null;
@@ -15,17 +15,19 @@ const normalizeMarketListing = (row) => {
       imageUrls: row.item_images || [],
       rarity: row.item_rarity,
       tags: row.item_tags || [],
-      description: row.item_description
+      description: row.item_description,
     },
     seller: {
       id: row.seller_id,
       nickname: row.seller_nickname,
       avatarUrl: row.seller_avatar,
-      reputationScore: parseFloat(row.seller_score) || 5.0
+      reputationScore: parseFloat(row.seller_score) || 5.0,
     },
-    buyer: row.buyer_id ? {
-      id: row.buyer_id,
-    } : null
+    buyer: row.buyer_id
+      ? {
+          id: row.buyer_id,
+        }
+      : null,
   };
 };
 
@@ -33,6 +35,13 @@ const findAll = async (q) => {
   const { page, size } = parsePagination(q);
   const conditions = ["ml.status = 'ACTIVE'"];
   const params = [];
+
+  if (q.keyword && String(q.keyword).trim()) {
+    params.push(`%${String(q.keyword).trim()}%`);
+    conditions.push(
+      `(i.name ILIKE $${params.length} OR COALESCE(i.description, '') ILIKE $${params.length})`,
+    );
+  }
 
   if (q.rarity) {
     params.push(q.rarity);
@@ -47,12 +56,12 @@ const findAll = async (q) => {
     conditions.push(`ml.asking_price <= $${params.length}`);
   }
   if (q.tags) {
-    const tagArr = q.tags.split(',').map((t) => t.trim());
+    const tagArr = q.tags.split(",").map((t) => t.trim());
     params.push(JSON.stringify(tagArr));
     conditions.push(`i.tags ?| $${params.length}::text[]`);
   }
 
-  const where = `WHERE ${conditions.join(' AND ')}`;
+  const where = `WHERE ${conditions.join(" AND ")}`;
   const offset = page * size;
 
   const { rows } = await query(
@@ -72,7 +81,7 @@ const findAll = async (q) => {
      ${where}
      ORDER BY ml.created_at DESC
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-    [...params, size, offset]
+    [...params, size, offset],
   );
 
   const { rows: cnt } = await query(
@@ -80,10 +89,15 @@ const findAll = async (q) => {
      FROM market_listings ml
      JOIN items i ON i.id = ml.item_id
      ${where}`,
-    params
+    params,
   );
 
-  return pageResponse(rows.map(normalizeMarketListing), cnt[0].count, page, size);
+  return pageResponse(
+    rows.map(normalizeMarketListing),
+    cnt[0].count,
+    page,
+    size,
+  );
 };
 
 const findById = async (id) => {
@@ -102,7 +116,7 @@ const findById = async (id) => {
      JOIN items i ON i.id = ml.item_id
      JOIN users u ON u.id = ml.seller_id
      WHERE ml.id = $1`,
-    [id]
+    [id],
   );
   return normalizeMarketListing(rows[0]);
 };
@@ -124,7 +138,7 @@ const findBySellerId = async (sellerId) => {
      JOIN users u ON u.id = ml.seller_id
      WHERE ml.seller_id = $1 AND ml.status = 'ACTIVE'
      ORDER BY ml.created_at DESC`,
-    [sellerId]
+    [sellerId],
   );
   return rows.map(normalizeMarketListing);
 };
@@ -136,7 +150,7 @@ const create = async (sellerId, itemId, askingPrice) => {
      VALUES
        (gen_random_uuid(), $1, $2, $3, 'ACTIVE', now(), now())
      RETURNING *`,
-    [itemId, sellerId, askingPrice]
+    [itemId, sellerId, askingPrice],
   );
   return rows[0];
 };
@@ -149,7 +163,7 @@ const cancel = async (id, sellerId) => {
        AND seller_id = $2
        AND status = 'ACTIVE'
      RETURNING *`,
-    [id, sellerId]
+    [id, sellerId],
   );
   return rows[0];
 };
@@ -157,7 +171,7 @@ const cancel = async (id, sellerId) => {
 const buy = async (listingId, buyerId) => {
   const client = await getClient();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Lock listing
     const { rows: ml } = await client.query(
@@ -166,29 +180,41 @@ const buy = async (listingId, buyerId) => {
        JOIN items i ON i.id = ml.item_id
        WHERE ml.id = $1 AND ml.status = 'ACTIVE'
        FOR UPDATE`,
-      [listingId]
+      [listingId],
     );
     if (!ml.length) {
-      throw { errorCode: 'NOT_FOUND', status: 404, message: 'Listing không tồn tại hoặc đã bán.' };
+      throw {
+        errorCode: "NOT_FOUND",
+        status: 404,
+        message: "Listing không tồn tại hoặc đã bán.",
+      };
     }
 
     const listing = ml[0];
 
     if (listing.seller_id === buyerId) {
-      throw { errorCode: 'FORBIDDEN', status: 403, message: 'Không thể mua đồ của chính mình.' };
+      throw {
+        errorCode: "FORBIDDEN",
+        status: 403,
+        message: "Không thể mua đồ của chính mình.",
+      };
     }
 
-    const price          = parseFloat(listing.asking_price);
-    const fee            = Math.round(price * 0.05);
+    const price = parseFloat(listing.asking_price);
+    const fee = Math.round(price * 0.05);
     const sellerReceives = price - fee;
 
     // Check balance buyer
     const { rows: buyerW } = await client.query(
-      'SELECT id, balance_available FROM wallets WHERE user_id = $1 FOR UPDATE',
-      [buyerId]
+      "SELECT id, balance_available FROM wallets WHERE user_id = $1 FOR UPDATE",
+      [buyerId],
     );
     if (!buyerW.length || parseFloat(buyerW[0].balance_available) < price) {
-      throw { errorCode: 'INSUFFICIENT_BALANCE', status: 400, message: 'Số dư không đủ.' };
+      throw {
+        errorCode: "INSUFFICIENT_BALANCE",
+        status: 400,
+        message: "Số dư không đủ.",
+      };
     }
 
     // Trừ buyer
@@ -196,26 +222,26 @@ const buy = async (listingId, buyerId) => {
       `UPDATE wallets
        SET balance_available = balance_available - $1
        WHERE id = $2`,
-      [price, buyerW[0].id]
+      [price, buyerW[0].id],
     );
     await client.query(
       `INSERT INTO transactions
          (id, wallet_id, type, amount, status, reference_id, created_at)
        VALUES
          (gen_random_uuid(), $1, 'FINAL_PAYMENT', $2, 'COMPLETED', $3, now())`,
-      [buyerW[0].id, price, listingId]
+      [buyerW[0].id, price, listingId],
     );
 
     // Cộng seller (trừ phí)
     const { rows: sellerW } = await client.query(
-      'SELECT id FROM wallets WHERE user_id = $1',
-      [listing.seller_id]
+      "SELECT id FROM wallets WHERE user_id = $1",
+      [listing.seller_id],
     );
     await client.query(
       `UPDATE wallets
        SET balance_available = balance_available + $1
        WHERE id = $2`,
-      [sellerReceives, sellerW[0].id]
+      [sellerReceives, sellerW[0].id],
     );
     await client.query(
       `INSERT INTO transactions
@@ -223,7 +249,7 @@ const buy = async (listingId, buyerId) => {
        VALUES
          (gen_random_uuid(), $1, 'FINAL_PAYMENT', $2, 'COMPLETED', $3, now()),
          (gen_random_uuid(), $1, 'PLATFORM_FEE',  $4, 'COMPLETED', $3, now())`,
-      [sellerW[0].id, sellerReceives, listingId, fee]
+      [sellerW[0].id, sellerReceives, listingId, fee],
     );
 
     // Chuyển ownership + cooldown
@@ -232,7 +258,7 @@ const buy = async (listingId, buyerId) => {
        SET current_owner_id = $1,
            cooldown_until   = now() + interval '12 hours'
        WHERE id = $2`,
-      [buyerId, listing.item_id]
+      [buyerId, listing.item_id],
     );
 
     // Đóng listing
@@ -243,13 +269,13 @@ const buy = async (listingId, buyerId) => {
            updated_at = now()
        WHERE id = $1
        RETURNING *`,
-      [listingId, buyerId]
+      [listingId, buyerId],
     );
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return updated[0];
   } catch (e) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw e;
   } finally {
     client.release();
@@ -258,14 +284,18 @@ const buy = async (listingId, buyerId) => {
 
 const findMessages = async (listingId, requestingUserId) => {
   const { rows: listing } = await query(
-    'SELECT seller_id, buyer_id FROM market_listings WHERE id = $1',
-    [listingId]
+    "SELECT seller_id, buyer_id FROM market_listings WHERE id = $1",
+    [listingId],
   );
-  if (!listing.length) throw { errorCode: 'NOT_FOUND', status: 404 };
+  if (!listing.length) throw { errorCode: "NOT_FOUND", status: 404 };
 
   const { seller_id, buyer_id } = listing[0];
   if (requestingUserId !== seller_id && requestingUserId !== buyer_id) {
-    throw { errorCode: 'FORBIDDEN', status: 403, message: 'Bạn không có quyền xem chat này.' };
+    throw {
+      errorCode: "FORBIDDEN",
+      status: 403,
+      message: "Bạn không có quyền xem chat này.",
+    };
   }
 
   const { rows } = await query(
@@ -277,10 +307,10 @@ const findMessages = async (listingId, requestingUserId) => {
      JOIN users u ON u.id = m.sender_id
      WHERE m.market_listing_id = $1
      ORDER BY m.created_at ASC`,
-    [listingId]
+    [listingId],
   );
-  
-  return rows.map(r => ({
+
+  return rows.map((r) => ({
     id: r.id,
     content: r.content,
     createdAt: r.created_at,
@@ -289,17 +319,17 @@ const findMessages = async (listingId, requestingUserId) => {
       id: r.sender_id,
       nickname: r.sender_nickname,
       avatarUrl: r.sender_avatar,
-      reputationScore: parseFloat(r.sender_score) || 5.0
-    }
+      reputationScore: parseFloat(r.sender_score) || 5.0,
+    },
   }));
 };
 
 const createMessage = async (listingId, senderId, content) => {
   const { rows: listing } = await query(
-    'SELECT seller_id, buyer_id FROM market_listings WHERE id = $1',
-    [listingId]
+    "SELECT seller_id, buyer_id FROM market_listings WHERE id = $1",
+    [listingId],
   );
-  if (!listing.length) throw { errorCode: 'NOT_FOUND', status: 404 };
+  if (!listing.length) throw { errorCode: "NOT_FOUND", status: 404 };
 
   const { seller_id, buyer_id } = listing[0];
   const receiverId = senderId === seller_id ? buyer_id : seller_id;
@@ -310,13 +340,19 @@ const createMessage = async (listingId, senderId, content) => {
      VALUES
        (gen_random_uuid(), $1, $2, $3, $4, now())
      RETURNING *`,
-    [senderId, receiverId, listingId, content]
+    [senderId, receiverId, listingId, content],
   );
 
   return { message: rows[0], receiverId };
 };
 
 module.exports = {
-  findAll, findById, findBySellerId, create, cancel, buy,
-  findMessages, createMessage,
+  findAll,
+  findById,
+  findBySellerId,
+  create,
+  cancel,
+  buy,
+  findMessages,
+  createMessage,
 };

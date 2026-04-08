@@ -1,0 +1,71 @@
+const { query, getClient } = require('../config/database.config');
+
+const create = async ({ fromUserId, toUserId, auctionId, marketListingId, stars, comment }) => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `INSERT INTO ratings
+         (id, from_user_id, to_user_id, auction_id, market_listing_id, stars, comment, created_at)
+       VALUES
+         (gen_random_uuid(), $1, $2, $3, $4, $5, $6, now())
+       RETURNING *`,
+      [fromUserId, toUserId, auctionId || null, marketListingId || null, stars, comment]
+    );
+
+    // Tính lại reputation_score = AVG(stars) của toàn bộ rating nhận được
+    await client.query(
+      `UPDATE users
+       SET reputation_score = (
+         SELECT ROUND(AVG(stars)::numeric, 2)
+         FROM ratings
+         WHERE to_user_id = $1
+       )
+       WHERE id = $1`,
+      [toUserId]
+    );
+
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (e) {
+    await client.query('ROLLBACK');
+    // Unique constraint violation → đã đánh giá rồi
+    if (e.code === '23505') {
+      throw { errorCode: 'RATING_ALREADY_EXISTS', status: 409, message: 'Bạn đã đánh giá giao dịch này rồi.' };
+    }
+    throw e;
+  } finally {
+    client.release();
+  }
+};
+
+const normalizeRating = (row) => {
+  if (!row) return null;
+  const { from_user_nickname, from_user_avatar, ...rest } = row;
+  return {
+    ...rest,
+    fromUser: {
+      id: row.from_user_id,
+      nickname: from_user_nickname,
+      avatarUrl: from_user_avatar,
+    },
+  };
+};
+
+const findByUserId = async (userId) => {
+  const { rows } = await query(
+    `SELECT r.*, 
+            u.id AS from_user_id,
+            u.nickname AS from_user_nickname, 
+            u.avatar_url AS from_user_avatar
+     FROM ratings r
+     JOIN users u ON u.id = r.from_user_id
+     WHERE r.to_user_id = $1
+     ORDER BY r.created_at DESC`,
+    [userId]
+  );
+  return rows.map(normalizeRating);
+};
+
+module.exports = { create, findByUserId };

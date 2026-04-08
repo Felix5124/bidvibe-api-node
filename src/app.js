@@ -7,18 +7,9 @@ const morgan  = require('morgan');
 const { pool }          = require('./config/database.config');
 const { errorHandler }  = require('./middlewares/errorHandler.middleware');
 const { apiLimiter }    = require('./middlewares/rateLimiter.middleware');
+const apiRoutes         = require('./routes');
 
 // ── Routes ─────────────────────────────────────────────────
-const userRoutes         = require('./modules/user/user.routes');
-const walletRoutes       = require('./modules/wallet/wallet.routes');
-const itemRoutes         = require('./modules/item/item.routes');
-const sessionRoutes      = require('./modules/session/session.routes');
-const auctionRoutes      = require('./modules/auction/auction.routes');
-const marketRoutes       = require('./modules/market/market.routes');
-const notificationRoutes = require('./modules/notification/notification.routes');
-const ratingRoutes       = require('./modules/rating/rating.routes');
-const analyticsRoutes    = require('./modules/analytics/analytics.routes');
-const adminRoutes        = require('./modules/admin/admin.routes');
 
 const app = express();
 
@@ -68,16 +59,7 @@ app.get('/health', async (req, res) => {
 });
 
 // ── API Routes ──────────────────────────────────────────────
-app.use('/api/users',         userRoutes);
-app.use('/api/wallet',        walletRoutes);
-app.use('/api/items',         itemRoutes);
-app.use('/api/sessions',      sessionRoutes);
-app.use('/api/auctions',      auctionRoutes);
-app.use('/api/market',        marketRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/ratings',       ratingRoutes);
-app.use('/api/analytics',     analyticsRoutes);
-app.use('/api/admin',         adminRoutes);
+app.use('/api', apiRoutes);
 
 // ── 404 ─────────────────────────────────────────────────────
 app.use((req, res) => {

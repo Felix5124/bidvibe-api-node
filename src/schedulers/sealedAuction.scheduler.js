@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { query, getClient }    = require('../config/database.config');
 const { publishSealedReveal } = require('../websocket/publishers/auctionPublisher');
-const notifService  = require('../modules/notification/notification.service');
+const notifService  = require('../services/notification.service');
 const { NotificationType }    = require('../constants/enums');
 const { PLATFORM_FEE_RATE }   = require('../constants/appConstants');
 

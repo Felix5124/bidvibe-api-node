@@ -1,5 +1,5 @@
-const { query } = require('../config/database.config');
-const { pageResponse, parsePagination } = require('../utils/pagination');
+const { query } = require("../config/database.config");
+const { pageResponse, parsePagination } = require("../utils/pagination");
 
 const findAll = async (q) => {
   const { page, size } = parsePagination(q);
@@ -15,27 +15,26 @@ const findAll = async (q) => {
     conditions.push(`type = $${params.length}`);
   }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const { rows } = await query(
     `SELECT * FROM auction_sessions
      ${where}
-     ORDER BY start_time DESC
+     ORDER BY created_at DESC
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-    [...params, size, page * size]
+    [...params, size, page * size],
   );
   const { rows: cnt } = await query(
     `SELECT COUNT(*) FROM auction_sessions ${where}`,
-    params
+    params,
   );
   return pageResponse(rows, cnt[0].count, page, size);
 };
 
 const findById = async (id) => {
-  const { rows } = await query(
-    'SELECT * FROM auction_sessions WHERE id = $1',
-    [id]
-  );
+  const { rows } = await query("SELECT * FROM auction_sessions WHERE id = $1", [
+    id,
+  ]);
   return rows[0];
 };
 
@@ -55,7 +54,7 @@ const findAuctions = async (sessionId) => {
      JOIN users u ON u.id = i.seller_id
      WHERE a.session_id = $1
      ORDER BY a.order_index ASC`,
-    [sessionId]
+    [sessionId],
   );
   return rows;
 };
@@ -65,13 +64,13 @@ const create = async ({ title, type, startTime }) => {
     `INSERT INTO auction_sessions (id, title, type, start_time, status, created_at)
      VALUES (gen_random_uuid(), $1, $2, $3, 'SCHEDULED', now())
      RETURNING *`,
-    [title, type, startTime]
+    [title, type, startTime],
   );
   return rows[0];
 };
 
 const updateStatus = async (id, status, extra = {}) => {
-  const sets = ['status = $2'];
+  const sets = ["status = $2"];
   const params = [id, status];
 
   if (extra.remainingSeconds !== undefined) {
@@ -80,8 +79,8 @@ const updateStatus = async (id, status, extra = {}) => {
   }
 
   const { rows } = await query(
-    `UPDATE auction_sessions SET ${sets.join(', ')} WHERE id = $1 RETURNING *`,
-    params
+    `UPDATE auction_sessions SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
+    params,
   );
   return rows[0];
 };

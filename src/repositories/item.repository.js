@@ -8,12 +8,19 @@ const ensureShippingRequestsTable = async () => {
       item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
       requester_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       shipping_address TEXT NOT NULL,
+      shipping_phone TEXT,
       status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'RECEIVED')),
       admin_note TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`,
   );
+
+  // Add shipping_phone column if it doesn't exist
+  await query(
+    `ALTER TABLE shipping_requests ADD COLUMN IF NOT EXISTS shipping_phone TEXT`,
+  );
+
   await query(
     `CREATE INDEX IF NOT EXISTS idx_shipping_requests_item ON shipping_requests (item_id, created_at DESC)`,
   );
@@ -276,15 +283,16 @@ const createShippingRequest = async ({
   itemId,
   requesterId,
   shippingAddress,
+  shippingPhone,
 }) => {
   await ensureShippingRequestsTable();
   const { rows } = await query(
     `INSERT INTO shipping_requests
-       (id, item_id, requester_id, shipping_address, status, created_at, updated_at)
+       (id, item_id, requester_id, shipping_address, shipping_phone, status, created_at, updated_at)
      VALUES
-       (gen_random_uuid(), $1, $2, $3, 'PENDING', now(), now())
+       (gen_random_uuid(), $1, $2, $3, $4, 'PENDING', now(), now())
      RETURNING *`,
-    [itemId, requesterId, shippingAddress],
+    [itemId, requesterId, shippingAddress, shippingPhone],
   );
   return rows[0];
 };

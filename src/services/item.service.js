@@ -35,7 +35,7 @@ const readItemOwnerId = (item) =>
 const requestShipping = async (
   itemId,
   userId,
-  { shippingAddress, updateProfileAddress } = {},
+  { shippingAddress, shippingPhone, updateProfileAddress } = {},
 ) => {
   const item = await repo.findById(itemId);
   if (!item) {
@@ -68,6 +68,23 @@ const requestShipping = async (
     };
   }
 
+  const normalizedPhone = String(shippingPhone || "").trim();
+  if (!normalizedPhone) {
+    throw {
+      errorCode: ErrorCode.VALIDATION_ERROR,
+      status: 400,
+      message: "Vui lòng cung cấp số điện thoại.",
+    };
+  }
+
+  if (!/^\d{10}$/.test(normalizedPhone)) {
+    throw {
+      errorCode: ErrorCode.VALIDATION_ERROR,
+      status: 400,
+      message: "Số điện thoại phải chính xác 10 chữ số.",
+    };
+  }
+
   const latestRequest = await repo.findLatestShippingRequest(itemId);
   if (latestRequest && latestRequest.status === "PENDING") {
     throw {
@@ -88,12 +105,14 @@ const requestShipping = async (
     itemId,
     requesterId: userId,
     shippingAddress: normalizedAddress,
+    shippingPhone: normalizedPhone,
   });
 
   if (updateProfileAddress) {
-    await query("UPDATE users SET address = $2 WHERE id = $1", [
+    await query("UPDATE users SET address = $2, phone = $3 WHERE id = $1", [
       userId,
       normalizedAddress,
+      normalizedPhone,
     ]);
   }
 
